@@ -2,6 +2,7 @@ import type { SessionOptions } from "iron-session";
 
 export type SessionData = {
   telegramId: string;
+  privyUserId: string;
   walletAddress: string;
 };
 

@@ -40,9 +40,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Pregen wallet (idempotent)
+  let privyUserId: string;
   let walletAddress: string;
   try {
-    walletAddress = await pregenerateWallet(telegramId);
+    ({ privyUserId, walletAddress } = await pregenerateWallet(telegramId));
   } catch (err) {
     if (err instanceof WalletPregenerationError) {
       console.error("Privy pregeneration error:", err);
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
   // Set session cookie
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   session.telegramId = telegramId;
+  session.privyUserId = privyUserId;
   session.walletAddress = walletAddress;
   await session.save();
 
