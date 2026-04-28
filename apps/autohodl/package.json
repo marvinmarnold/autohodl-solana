@@ -5,11 +5,21 @@
   "description": "autoHODL consumer product: Telegram bot, Mini App webview, Solana Actions API, and on-chain program.",
   "type": "module",
   "scripts": {
-    "dev": "echo 'dev server not yet configured'",
-    "build": "echo 'build not yet configured'",
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "typescript": "*"
+  },
+  "dependencies": {
+    "grammy": "^1.42.0",
+    "iron-session": "^8.0.4",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   }
 }
