@@ -65,6 +65,8 @@ async function getOrCreatePrivyUser(
       { headers },
     );
     if (!getRes.ok) {
+      const body = await getRes.text().catch(() => "(unreadable)");
+      console.error(`Privy user lookup failed: ${getRes.status}`, body);
       throw new WalletPregenerationError(
         `Privy user lookup failed: ${getRes.status}`,
         getRes.status,
@@ -77,6 +79,8 @@ async function getOrCreatePrivyUser(
     };
   }
 
+  const errorBody = await createRes.text().catch(() => "(unreadable)");
+  console.error(`Privy user creation failed: ${createRes.status}`, errorBody);
   throw new WalletPregenerationError(
     `Privy user creation failed: ${createRes.status}`,
     createRes.status,
@@ -99,6 +103,8 @@ async function createSolanaWallet(
   });
 
   if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    console.error(`Privy wallet creation failed: ${res.status}`, body);
     throw new WalletPregenerationError(
       `Privy wallet creation failed: ${res.status}`,
       res.status,
