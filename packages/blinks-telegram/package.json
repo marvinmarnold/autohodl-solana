@@ -1,0 +1,22 @@
+{
+  "name": "@autohodl/blinks-telegram",
+  "version": "0.0.0",
+  "description": "Render Solana Actions/Blinks inside Telegram Mini Apps. Bridges Dialect's BlinkComponent with Privy signing and Telegram theme params.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

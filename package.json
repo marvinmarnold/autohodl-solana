@@ -1,0 +1,16 @@
+{
+  "name": "autohodl-solana",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "fmt": "biome format --write .",
+    "fmt:check": "biome format ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.7.3"
+  }
+}

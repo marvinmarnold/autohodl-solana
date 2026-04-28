@@ -1,0 +1,22 @@
+{
+  "name": "@autohodl/telegraf-agent",
+  "version": "0.0.0",
+  "description": "Telegraf middleware that routes configurable messages through an LLM with tool calling, including first-class support for Blink-output tools. Built in M3.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

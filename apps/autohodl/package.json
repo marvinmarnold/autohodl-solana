@@ -1,0 +1,15 @@
+{
+  "name": "autohodl",
+  "version": "0.0.0",
+  "private": true,
+  "description": "autoHODL consumer product: Telegram bot, Mini App webview, Solana Actions API, and on-chain program.",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'dev server not yet configured'",
+    "build": "echo 'build not yet configured'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}
