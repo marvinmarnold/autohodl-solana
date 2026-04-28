@@ -60,7 +60,7 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
       linked_accounts: [
         { type: "custom_auth", custom_user_id: `telegram:${telegramId}` },
       ],
-      wallets: [{ chain_type: "solana", wallet_index: 0 }],
+      wallets: [{ chain_type: "solana" }],
     }),
   });
 
