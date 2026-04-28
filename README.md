@@ -9,7 +9,7 @@ See [CLAUDE.md](./CLAUDE.md) for full project context, milestone plan, architect
 | Package | Description |
 |---|---|
 | `packages/blinks-telegram` | Public-goods library: render Solana Actions/Blinks inside Telegram Mini Apps |
-| `packages/telegraf-agent` | Public-goods library: Telegraf middleware with LLM tool calling and Blink-output support (M3) |
+| `packages/grammy-agent` | Public-goods library: grammY middleware with LLM tool calling and Blink-output support (M3) |
 | `apps/autohodl` | Consumer product: Telegram bot, Mini App webview, Solana Actions API, on-chain program |
 
 ## Tooling

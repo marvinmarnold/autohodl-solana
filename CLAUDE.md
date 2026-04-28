@@ -7,7 +7,7 @@ Three workspaces:
 
 - `packages/blinks-telegram` — public-goods library: render Solana
   Actions/Blinks inside Telegram Mini Apps.
-- `packages/telegraf-agent` — public-goods library: Telegraf middleware that
+- `packages/grammy-agent` — public-goods library: grammY middleware that
   routes configurable messages through an LLM with tool calling, including
   first-class support for Blink-output tools.
 - `apps/autohodl` — the consumer product. Scheduled USDC savings on Solana,
@@ -25,7 +25,7 @@ Three workspaces:
 - **On-chain program:** framework choice (Anchor vs raw `solana-program` /
   pinocchio) is **deferred** until we examine Reflect's CPI surface in M1.
   Don't pick one preemptively.
-- **Telegram bot:** Telegraf (Node).
+- **Telegram bot:** grammY (webhook mode, serverless-compatible).
 - **Mini App webview:** Next.js, deployed to Vercel.
 - **LLM:** Vercel AI SDK as the reference, with Anthropic Claude as default
   provider.
@@ -37,7 +37,7 @@ Three workspaces:
 │
 │ Action URL (Blink) or natural-language message
 ▼
-[telegraf-agent middleware] ──────▶ [LLM tool call] ──▶ [Blink URL]
+[grammy-agent middleware] ──────▶ [LLM tool call] ──▶ [Blink URL]
 │
 ▼
 [blinks-telegram renders]
@@ -71,10 +71,10 @@ server-signing with a scoped policy. The on-chain program gains a
 `spend_atomic` instruction that redeems USDC+ → USDC → transfers to recipient
 in one transaction (the SYT primitive). User can spend via a Blink.
 
-### M3 — Squads Smart Account + Tuk Tuk + telegraf-agent
+### M3 — Squads Smart Account + Tuk Tuk + grammy-agent
 Replace Privy-EOA-with-server-signing with a Squads Smart Account where
 autoHODL is a constrained delegate authority. Replace Mac scheduler with
-on-chain cron via Tuk Tuk. Build `telegraf-agent` library and use it to add
+on-chain cron via Tuk Tuk. Build `grammy-agent` library and use it to add
 conversational round-up onboarding to the autoHODL bot.
 
 ## Cross-cutting design notes
@@ -89,7 +89,7 @@ conversational round-up onboarding to the autoHODL bot.
   account layouts make Anchor's macros fight us. Decide after M1 task 5.
 
 - **Library dogfooding.** `apps/autohodl` should consume `blinks-telegram`
-  and (in M3) `telegraf-agent` exactly as an external user would, via the
+  and (in M3) `grammy-agent` exactly as an external user would, via the
   workspace dependency. If it ever needs to reach into library internals,
   that's a sign the library API is wrong and should be fixed.
 
@@ -101,7 +101,7 @@ Primary fits:
 - **Payments + Commerce** — atomic-unwind spend.
 
 Secondary fits:
-- **Agents + Tokenization** — `telegraf-agent` library + autoHODL's
+- **Agents + Tokenization** — `grammy-agent` library + autoHODL's
   conversational onboarding (M3).
 - **Identity + Human Verification** — Telegram identity as wallet authority,
   documented in `blinks-telegram`.
@@ -181,7 +181,7 @@ depends on any of them until the spike confirms them.
 - Telegram Mini Apps: https://core.telegram.org/bots/webapps
 - TG initData validation: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 - TG seamless auth article: https://medium.com/@miralex13/seamless-authentication-in-telegram-mini-apps-building-a-secure-and-frictionless-user-experience-6249599e2693
-- Telegraf: https://telegraf.js.org
+- grammY: https://grammy.dev
 - Vercel AI SDK: https://ai-sdk.dev
 - MoonPay Recurring Buys: https://www.moonpay.com/business/onramp/recurring-buys
 - Reflect: https://reflect.money
