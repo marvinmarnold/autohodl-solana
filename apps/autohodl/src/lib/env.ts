@@ -4,13 +4,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// Validated at module load time. App crashes immediately if any var is missing.
+// Lazy getters: validation runs when each property is first accessed (at
+// request time), not when this module is imported (at build time). This lets
+// Next.js evaluate API route modules during the build without requiring env
+// vars to be present, while still failing loud and fast on the first request
+// if a var is missing.
 export const env = {
-  TELEGRAM_BOT_TOKEN: requireEnv("TELEGRAM_BOT_TOKEN"),
-  PRIVY_APP_ID: requireEnv("PRIVY_APP_ID"),
-  PRIVY_APP_SECRET: requireEnv("PRIVY_APP_SECRET"),
-  SESSION_SECRET: requireEnv("SESSION_SECRET"),
+  get TELEGRAM_BOT_TOKEN() { return requireEnv("TELEGRAM_BOT_TOKEN"); },
+  get PRIVY_APP_ID() { return requireEnv("PRIVY_APP_ID"); },
+  get PRIVY_APP_SECRET() { return requireEnv("PRIVY_APP_SECRET"); },
+  get SESSION_SECRET() { return requireEnv("SESSION_SECRET"); },
   // NEXT_PUBLIC_ vars are inlined at build time for the client bundle,
   // but are also accessible via process.env in server code.
-  NEXT_PUBLIC_MINI_APP_URL: requireEnv("NEXT_PUBLIC_MINI_APP_URL"),
+  get NEXT_PUBLIC_MINI_APP_URL() { return requireEnv("NEXT_PUBLIC_MINI_APP_URL"); },
 } as const;
