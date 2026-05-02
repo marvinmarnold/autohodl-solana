@@ -14,6 +14,7 @@ type PrivyWallet = {
   type: "wallet";
   chain_type: string;
   address: string;
+  id: string;
 };
 
 type PrivyLinkedAccount = PrivyWallet | { type: string };
@@ -21,6 +22,16 @@ type PrivyLinkedAccount = PrivyWallet | { type: string };
 type PrivyUserResponse = {
   id: string; // did:privy:...
   linked_accounts: PrivyLinkedAccount[];
+};
+
+type PrivyWalletCreateResponse = {
+  id: string;
+  address: string;
+};
+
+// ⚠️ VERIFY: Privy server-signing response shape — check docs before using
+type PrivySignResponse = {
+  data: { hash: string };
 };
 
 function authHeaders() {
@@ -43,11 +54,10 @@ function findSolanaWallet(data: PrivyUserResponse): PrivyWallet | undefined {
   );
 }
 
-// Step 1: Create a Privy user linked to the Telegram ID, or fetch the existing
-// one on 409. Returns the Privy user ID and any already-created Solana wallet.
 async function getOrCreatePrivyUser(telegramId: string): Promise<{
   privyUserId: string;
   existingWalletAddress: string | null;
+  existingWalletId: string | null;
 }> {
   const headers = authHeaders();
 
@@ -55,8 +65,6 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
     method: "POST",
     headers,
     body: JSON.stringify({
-      // linked_accounts is required. We use custom_auth to associate the
-      // Telegram user ID so we can look up the user after session expiry.
       linked_accounts: [
         { type: "custom_auth", custom_user_id: `telegram:${telegramId}` },
       ],
@@ -67,15 +75,15 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
   if (createRes.ok) {
     const data = (await createRes.json()) as PrivyUserResponse;
     console.log("Privy user created:", data.id);
+    const wallet = findSolanaWallet(data);
     return {
       privyUserId: data.id,
-      existingWalletAddress: findSolanaWallet(data)?.address ?? null,
+      existingWalletAddress: wallet?.address ?? null,
+      existingWalletId: wallet?.id ?? null,
     };
   }
 
   if (createRes.status === 409) {
-    // User already exists — look up by custom auth ID.
-    // REST endpoint: POST /api/v1/users/custom_auth/id
     const lookupRes = await fetch(
       "https://auth.privy.io/api/v1/users/custom_auth/id",
       {
@@ -94,9 +102,11 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
     }
     const data = (await lookupRes.json()) as PrivyUserResponse;
     console.log("Privy user found:", data.id);
+    const wallet = findSolanaWallet(data);
     return {
       privyUserId: data.id,
-      existingWalletAddress: findSolanaWallet(data)?.address ?? null,
+      existingWalletAddress: wallet?.address ?? null,
+      existingWalletId: wallet?.id ?? null,
     };
   }
 
@@ -108,9 +118,9 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
   );
 }
 
-// Step 2: Create a Solana wallet for the Privy user if one doesn't exist yet.
-// Wallet creation uses api.privy.io (separate base URL from auth.privy.io).
-async function createSolanaWallet(privyUserId: string): Promise<string> {
+async function createSolanaWallet(
+  privyUserId: string,
+): Promise<{ address: string; walletId: string }> {
   const res = await fetch("https://api.privy.io/v1/wallets", {
     method: "POST",
     headers: authHeaders(),
@@ -129,21 +139,81 @@ async function createSolanaWallet(privyUserId: string): Promise<string> {
     );
   }
 
-  const data = (await res.json()) as { address: string };
+  const data = (await res.json()) as PrivyWalletCreateResponse;
   console.log("Privy Solana wallet created:", data.address);
-  return data.address;
+  return { address: data.address, walletId: data.id };
 }
 
-// Idempotent: creates or retrieves a Privy user + Solana wallet for the given
-// Telegram user ID. Returns the Solana wallet address.
-export async function pregenerateWallet(
-  telegramId: string,
-): Promise<{ privyUserId: string; walletAddress: string }> {
-  const { privyUserId, existingWalletAddress } =
+export async function pregenerateWallet(telegramId: string): Promise<{
+  privyUserId: string;
+  walletAddress: string;
+  privyWalletId: string;
+}> {
+  const { privyUserId, existingWalletAddress, existingWalletId } =
     await getOrCreatePrivyUser(telegramId);
 
-  const walletAddress =
-    existingWalletAddress ?? (await createSolanaWallet(privyUserId));
+  if (existingWalletAddress && existingWalletId) {
+    return { privyUserId, walletAddress: existingWalletAddress, privyWalletId: existingWalletId };
+  }
 
-  return { privyUserId, walletAddress };
+  const { address, walletId } = await createSolanaWallet(privyUserId);
+  return { privyUserId, walletAddress: address, privyWalletId: walletId };
+}
+
+export async function updatePrivyUserMetadata(
+  privyUserId: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch(
+    `https://auth.privy.io/api/v1/users/${privyUserId}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ custom_metadata: metadata }),
+    },
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    console.error(`Privy metadata update failed: ${res.status}`, body);
+    throw new WalletPregenerationError(
+      `Privy metadata update failed: ${res.status}`,
+      res.status,
+    );
+  }
+}
+
+// ⚠️ VERIFY before using: confirm caip2, request body shape, and response
+// shape against https://docs.privy.io/wallets/wallets/policies-overview/quickstart
+export async function signAndSendSolanaTransaction(
+  privyWalletId: string,
+  serializedTxBase64: string,
+): Promise<string> {
+  const res = await fetch(
+    `https://api.privy.io/v1/wallets/${privyWalletId}/rpc`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        method: "signAndSendTransaction",
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", // mainnet
+        params: {
+          transaction: serializedTxBase64,
+          encoding: "base64",
+        },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    console.error(`Privy sign+send failed: ${res.status}`, body);
+    throw new WalletPregenerationError(
+      `Privy sign+send failed: ${res.status}`,
+      res.status,
+    );
+  }
+
+  const data = (await res.json()) as PrivySignResponse;
+  return data.data.hash;
 }
