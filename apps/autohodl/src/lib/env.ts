@@ -17,4 +17,7 @@ export const env = {
   // NEXT_PUBLIC_ vars are inlined at build time for the client bundle,
   // but are also accessible via process.env in server code.
   get NEXT_PUBLIC_MINI_APP_URL() { return requireEnv("NEXT_PUBLIC_MINI_APP_URL"); },
+  get NEXT_PUBLIC_MOONPAY_API_KEY() { return requireEnv("NEXT_PUBLIC_MOONPAY_API_KEY"); },
+  get SOLANA_RPC_URL() { return requireEnv("SOLANA_RPC_URL"); },
+  get AUTOHODL_DELEGATE_PUBKEY() { return requireEnv("AUTOHODL_DELEGATE_PUBKEY"); },
 } as const;
