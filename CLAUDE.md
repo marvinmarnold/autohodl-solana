@@ -5,11 +5,14 @@
 A monorepo for autoHODL's Frontier hackathon submission (May 11, 2026 deadline).
 Three workspaces:
 
-- `packages/blinks-telegram` — public-goods library: render Solana
-  Actions/Blinks inside Telegram Mini Apps.
+- `packages/blinks-telegram` — public-goods library: convert any Solana
+  Actions endpoint into a Telegram inline `web_app` button + thin signing
+  WebView modal + bot confirmation middleware. The Telegram-native equivalent
+  of `@dialectlabs/blinks` for the web. Works with any grammY bot.
 - `packages/grammy-agent` — public-goods library: grammY middleware that
   routes configurable messages through an LLM with tool calling, including
-  first-class support for Blink-output tools.
+  first-class support for emitting blinks-telegram action buttons as
+  tool-call outputs.
 - `apps/autohodl` — the consumer product. Scheduled USDC savings on Solana,
   surfaced via the two libraries above. Uses Privy for auth + embedded
   wallets, MoonPay for scheduled onramp, Reflect for yield, and an on-chain
@@ -25,57 +28,81 @@ Three workspaces:
 - **On-chain program:** framework choice (Anchor vs raw `solana-program` /
   pinocchio) is **deferred** until we examine Reflect's CPI surface in M1.
   Don't pick one preemptively.
-- **Telegram bot:** grammY (webhook mode, serverless-compatible).
-- **Mini App webview:** Next.js, deployed to Vercel.
+- **Telegram bot:** grammY (webhook mode, serverless-compatible) + grammY
+  Conversations plugin for multi-step onboarding dialogue.
+- **Action WebViews:** Next.js pages served from Vercel, opened as transient
+  `web_app` modals by the bot. No persistent Mini App.
 - **LLM:** Vercel AI SDK as the reference, with Anthropic Claude as default
   provider.
 
 ## Architecture
 
+Three surfaces share one Action API. No persistent Mini App — all UX is
+chat-native.
+
 ```
-[User in Telegram Mini App or chat]
-│
-│ Action URL (Blink) or natural-language message
-▼
-[grammy-agent middleware] ──────▶ [LLM tool call] ──▶ [Blink URL]
-│
-▼
-[blinks-telegram renders]
-│
-▼
-[Action API endpoint] ── returns serialized tx ──▶ [Privy wallet signs]
-│                                                   │
-│                                                   ▼
-│                                          [Solana network]
-│                                                   │
-▼                                                   ▼
-[Backend scheduler]                              [autoHODL on-chain program]
-(Mac for M2,                                        ├── deposit
-Tuk Tuk for M3)                                     ├── withdraw
-├── spend (atomic unwind)
-└── CPIs into Reflect
+[Telegram chat]                           [Twitter / Browser]
+      │                                           │
+  grammY bot messages                   dial.to/?action=solana-action:<url>
+  inline web_app buttons                (or Phantom/Dialect extension unfurls)
+      │                                           │
+      ▼                                           ▼
+[Thin Action WebView]              [Action API — apps/autohodl]
+  (transient modal, ~5 sec)
+  1. initData HMAC validation        GET  /api/actions/:id → ActionGetResponse
+  2. iron-session auth               POST /api/actions/:id → { transaction: base64 }
+  3. render action metadata          Headers: Access-Control-Allow-Origin: *
+  4. sign via Privy embedded wallet  public/actions.json (Twitter extension trust)
+  5. window.Telegram.WebApp.close()
+      │
+      ▼
+[blinksConfirmation middleware]            [autoHODL on-chain program]
+  └─▶ ✅ message in thread                    ├── deposit (Reflect via CPI)
+                                              ├── withdraw
+[Backend scheduler]                          └── spend_atomic (SYT unwind)
+  (Mac for M2, Tuk Tuk for M3)
+  └─▶ auto-deposit using SPL delegation
+      (Token.approve signed once at onboarding)
 ```
+
+**Bot chat auth:** uses `from.id` from incoming Telegram messages (validated
+by webhook). Wallet lookup calls Privy custom_auth API (idempotent).
+
+**WebView auth:** `initData` HMAC + iron-session cookie (same-origin, shared
+across all thin WebViews on the same Vercel deployment).
 ## Milestones
 
-### M1 — Wallet auto-creation + Reflect deposit
-Mini App opens, Privy provisions a wallet silently from validated Telegram
-`initData`, user manually funds with USDC, taps a Blink rendered by
-`blinks-telegram` to deposit into Reflect via the autoHODL on-chain program,
-yield accrues.
+### M1 — Wallet auto-creation + onboarding + Reflect deposit
 
-### M2 — MoonPay scheduling + SYTs + spending
-User configures a recurring schedule. MoonPay deposits USDC to the user's
-wallet on schedule. Local backend (running on Marvin's Mac) detects USDC
-arrival and triggers a deposit-into-Reflect transaction signed via Privy
-server-signing with a scoped policy. The on-chain program gains a
-`spend_atomic` instruction that redeems USDC+ → USDC → transfers to recipient
-in one transaction (the SYT primitive). User can spend via a Blink.
+User sends `/start`. Bot pregenerates Privy wallet server-side. Multi-step
+onboarding conversation (grammY Conversations): picks frequency (Daily /
+Weekly / Monthly) and amount. Bot sends "Authorize" `web_app` button.
 
-### M3 — Squads Smart Account + Tuk Tuk + grammy-agent
-Replace Privy-EOA-with-server-signing with a Squads Smart Account where
-autoHODL is a constrained delegate authority. Replace Mac scheduler with
-on-chain cron via Tuk Tuk. Build `grammy-agent` library and use it to add
-conversational round-up onboarding to the autoHODL bot.
+**The key signing step:** thin Action WebView opens, user confirms, Privy
+embedded wallet signs an SPL `Token.approve` that delegates authority over
+the user's USDC token account to the autoHODL protocol PDA. Sign once — the
+protocol can deposit into Reflect on the user's behalf from now on without
+another signature.
+
+Settings (frequency, amount) stored in Privy user metadata. Bot sends MoonPay
+CTA to set up recurring buys. Backend triggers first Reflect deposit manually
+(bot command) using the delegation. Yield accrues.
+
+### M2 — Automated scheduling + SYTs + spending
+
+Mac backend monitors user wallet for USDC arrival (from MoonPay recurring
+buy). On detection, auto-executes Reflect deposit using the SPL delegation
+from M1 — no user action required. The on-chain program gains `spend_atomic`:
+redeems USDC+ → USDC → transfers to recipient atomically (the SYT primitive).
+User can spend via a chat-native Blink button.
+
+### M3 — Squads + Tuk Tuk + grammy-agent
+
+Replace Privy server-signing with a Squads Smart Account where autoHODL is a
+constrained delegate authority. Replace Mac scheduler with on-chain cron via
+Tuk Tuk. Build `grammy-agent` library: the agent emits blinks-telegram action
+buttons as tool-call outputs, enabling fully conversational onboarding where
+the agent proposes a savings plan and the user taps once to authorize.
 
 ## Cross-cutting design notes
 
@@ -88,10 +115,11 @@ conversational round-up onboarding to the autoHODL bot.
   clean IDL and CPI surface. Switch to raw `solana-program` if Reflect's
   account layouts make Anchor's macros fight us. Decide after M1 task 5.
 
-- **Library dogfooding.** `apps/autohodl` should consume `blinks-telegram`
-  and (in M3) `grammy-agent` exactly as an external user would, via the
-  workspace dependency. If it ever needs to reach into library internals,
-  that's a sign the library API is wrong and should be fixed.
+- **Library dogfooding.** `apps/autohodl` consumes `blinks-telegram` as its
+  sole chat UX layer — not a demo, real dogfooding. In M3 it also consumes
+  `grammy-agent`. Both via workspace dependency, exactly as an external user
+  would. If `apps/autohodl` ever needs to reach into library internals,
+  the library API is wrong and should be fixed.
 
 ## Track coverage (Frontier)
 
@@ -129,22 +157,32 @@ Secondary fits:
 
 Before deep coding, confirm:
 1. Privy embedded wallet + Telegram custom-token auth works silently inside
-   Telegram WebView.
+   Telegram WebView. ✅ **Confirmed** (spike complete, wallet address visible
+   in Telegram).
 2. Reflect's program is callable via CPI from our own program (vs SDK-only).
 3. MoonPay scheduled buys can target an arbitrary Solana destination address.
+4. SPL token `Token.approve` delegation allows the autoHODL backend to
+   execute `transfer_checked` on the user's USDC account without the user's
+   private key present — i.e., the Privy server-signing policy can act as
+   the transaction fee payer and instruction invoker while the user's
+   delegated authority covers the token transfer.
 
-These three unknowns gate the architecture. Don't write production code that
-depends on any of them until the spike confirms them.
+Items 2, 3, and 4 gate M1/M2. Don't write production code that depends on
+any of them until confirmed.
 
 ## Demo flow (record last)
 
-1. User opens @autohodl bot in Telegram, taps "Open Mini App."
-2. Mini App loads, wallet auto-provisioned silently.
-3. User taps "Configure Savings" → Blink renders inline → picks $20/week →
-   signs silently via Privy.
-4. Cut to one cycle later: balance shows accumulated USDC+ earning yield.
-5. User taps "Spend $5 to vendor" → Blink → recipient → signs.
-6. Show Solscan: ONE transaction, multiple CPIs (Reflect redeem + transfer).
+1. User sends `/start` to @autohodl bot.
+2. Bot: "How often do you want to save?" → user taps **Weekly**.
+3. Bot: "How much per week?" → user taps **$20**.
+4. Bot: "Tap to authorize." → user taps → thin WebView modal → "Authorize
+   autoHODL to save $20/week" → **Confirm** → signs SPL token delegation →
+   modal closes.
+5. Bot: "✅ Authorization set. Our agentic protocol will optimize your yield."
+   + **[Setup automatic deposits]** → user taps → MoonPay opens for $20/week.
+6. *(Cut to one cycle later)* Bot: "💰 $20 deposited into Reflect. Earning X% APY."
+7. Bot: **[💸 Spend $5]** → user taps → signs → "✅ Sent."
+8. Show Solscan: ONE transaction, multiple CPIs (Reflect redeem + transfer).
 
 ## Coding conventions
 
