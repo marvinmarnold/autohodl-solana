@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
   // Pregen wallet (idempotent)
   let privyUserId: string;
   let walletAddress: string;
+  let privyWalletId: string;
   try {
-    ({ privyUserId, walletAddress } = await pregenerateWallet(telegramId));
+    ({ privyUserId, walletAddress, privyWalletId } = await pregenerateWallet(telegramId));
   } catch (err) {
     if (err instanceof WalletPregenerationError) {
       console.error("Privy pregeneration error:", err);
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
   session.telegramId = telegramId;
   session.privyUserId = privyUserId;
   session.walletAddress = walletAddress;
+  session.privyWalletId = privyWalletId;
   await session.save();
 
   return NextResponse.json({ walletAddress });

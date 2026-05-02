@@ -4,6 +4,7 @@ export type SessionData = {
   telegramId: string;
   privyUserId: string;
   walletAddress: string;
+  privyWalletId: string;
 };
 
 // sameSite: "none" is required because Telegram WebView opens the Mini App
