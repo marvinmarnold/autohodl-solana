@@ -5,6 +5,25 @@ import { WalletPregenerationError, pregenerateWallet } from "@/lib/privy";
 
 const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
+// Temporary in-memory store for the custom-amount step.
+// Works in single-process local dev. Replace with Vercel KV for multi-instance prod.
+const pendingCustomAmount = new Map<string, { freq: string; expiresAt: number }>();
+
+const PERIOD_LABEL: Record<string, string> = {
+  daily: "day",
+  weekly: "week",
+  monthly: "month",
+};
+
+function authorizeUrl(freq: string, amount: number): string {
+  return `${env.NEXT_PUBLIC_MINI_APP_URL}/actions/authorize?freq=${freq}&amount=${amount}`;
+}
+
+function confirmMessage(freq: string, amount: number): string {
+  const period = PERIOD_LABEL[freq] ?? freq;
+  return `Got it — saving $${amount}/${period}. Tap below to authorize autoHODL to save on your behalf.`;
+}
+
 bot.command("start", async (ctx) => {
   const telegramId = String(ctx.from?.id);
   if (!telegramId) {
@@ -32,6 +51,68 @@ bot.command("start", async (ctx) => {
         .text("Monthly", "freq:monthly"),
     },
   );
+});
+
+bot.callbackQuery(/^freq:(daily|weekly|monthly)$/, async (ctx) => {
+  const freq = ctx.match[1] as string;
+  await ctx.answerCallbackQuery();
+  const period = PERIOD_LABEL[freq] ?? freq;
+  await ctx.reply(`How much per ${period}?`, {
+    reply_markup: new InlineKeyboard()
+      .text("$5", `amount:${freq}:5`)
+      .text("$10", `amount:${freq}:10`)
+      .text("$20", `amount:${freq}:20`)
+      .row()
+      .text("$50", `amount:${freq}:50`)
+      .text("Custom…", `custom:${freq}`),
+  });
+});
+
+bot.callbackQuery(/^amount:(daily|weekly|monthly):(\d+)$/, async (ctx) => {
+  const freq = ctx.match[1] as string;
+  const amount = Number(ctx.match[2]);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(confirmMessage(freq, amount), {
+    reply_markup: new InlineKeyboard().add({
+      text: "Authorize savings",
+      web_app: { url: authorizeUrl(freq, amount) },
+    }),
+  });
+});
+
+bot.callbackQuery(/^custom:(daily|weekly|monthly)$/, async (ctx) => {
+  const freq = ctx.match[1] as string;
+  const telegramId = String(ctx.from?.id);
+  await ctx.answerCallbackQuery();
+  pendingCustomAmount.set(telegramId, {
+    freq,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+  });
+  await ctx.reply("Type your amount (e.g. 35):");
+});
+
+bot.on("message:text", async (ctx) => {
+  const telegramId = String(ctx.from?.id);
+  const pending = pendingCustomAmount.get(telegramId);
+  if (!pending || Date.now() > pending.expiresAt) {
+    pendingCustomAmount.delete(telegramId);
+    return;
+  }
+
+  const amount = Number(ctx.message.text.trim());
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await ctx.reply("Please enter a valid amount (e.g. 35):");
+    return;
+  }
+
+  pendingCustomAmount.delete(telegramId);
+  const { freq } = pending;
+  await ctx.reply(confirmMessage(freq, amount), {
+    reply_markup: new InlineKeyboard().add({
+      text: "Authorize savings",
+      web_app: { url: authorizeUrl(freq, amount) },
+    }),
+  });
 });
 
 const handleUpdate = webhookCallback(bot, "std/http");
