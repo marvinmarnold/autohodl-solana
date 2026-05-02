@@ -53,19 +53,23 @@ bot.command("start", async (ctx) => {
   );
 });
 
+const FREQ_PRESETS: Record<string, number[]> = {
+  daily: [1, 5, 10, 20],
+  weekly: [5, 20, 50, 250],
+  monthly: [10, 20, 100, 300],
+};
+
 bot.callbackQuery(/^freq:(daily|weekly|monthly)$/, async (ctx) => {
   const freq = ctx.match[1] as string;
   await ctx.answerCallbackQuery();
   const period = PERIOD_LABEL[freq] ?? freq;
-  await ctx.reply(`How much per ${period}?`, {
-    reply_markup: new InlineKeyboard()
-      .text("$5", `amount:${freq}:5`)
-      .text("$10", `amount:${freq}:10`)
-      .text("$20", `amount:${freq}:20`)
-      .row()
-      .text("$50", `amount:${freq}:50`)
-      .text("Custom…", `custom:${freq}`),
-  });
+  const presets = FREQ_PRESETS[freq] ?? [];
+  const keyboard = new InlineKeyboard();
+  for (const amt of presets) {
+    keyboard.text(`$${amt}`, `amount:${freq}:${amt}`);
+  }
+  keyboard.row().text("Custom…", `custom:${freq}`);
+  await ctx.reply(`How much per ${period}?`, { reply_markup: keyboard });
 });
 
 bot.callbackQuery(/^amount:(daily|weekly|monthly):(\d+)$/, async (ctx) => {
