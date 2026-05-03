@@ -5,6 +5,11 @@
 # Run this every time your cloudflared tunnel URL changes.
 # It updates .env.local and repoints the Telegram webhook.
 #
+# Privy JWKS URL does NOT need to change with the tunnel — register it once
+# in the Privy dashboard pointing to your Vercel/production URL:
+#   https://<your-vercel-url>/jwks.json  (static file, never changes)
+# The /api/auth/jwks dynamic route also works if you prefer.
+#
 # Workflow:
 #   Terminal 1: cloudflared tunnel --url http://localhost:3000
 #   Terminal 2: bun run --cwd apps/autohodl dev

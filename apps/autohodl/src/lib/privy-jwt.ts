@@ -1,17 +1,17 @@
-import { importPKCS8, exportJWK, SignJWT, type JWK } from "jose";
+import { createPrivateKey, createPublicKey } from "crypto";
+import { SignJWT, type JWK } from "jose";
 
 const KEY_ID = "k1";
 
-async function getPrivateKey() {
-  const pem = Buffer.from(
+function getPrivatePem(): string {
+  return Buffer.from(
     process.env["PRIVY_CUSTOM_AUTH_PRIVATE_KEY"] ?? "",
     "base64",
   ).toString();
-  return importPKCS8(pem, "ES256");
 }
 
 export async function generatePrivyJWT(telegramId: string): Promise<string> {
-  const privateKey = await getPrivateKey();
+  const privateKey = createPrivateKey(getPrivatePem());
   return new SignJWT({ sub: `telegram:${telegramId}` })
     .setProtectedHeader({ alg: "ES256", kid: KEY_ID })
     .setIssuedAt()
@@ -19,12 +19,13 @@ export async function generatePrivyJWT(telegramId: string): Promise<string> {
     .sign(privateKey);
 }
 
-export async function getPublicJWKS(): Promise<{ keys: JWK[] }> {
-  const privateKey = await getPrivateKey();
-  const fullJwk = await exportJWK(privateKey);
-  // Strip private key component, keep public params only
-  const { d: _d, ...publicJwk } = fullJwk;
+// Returns the public JWKS. jose accepts Node.js KeyObjects, avoiding the
+// non-extractable CryptoKey issue from importPKCS8's default key format.
+export function getPublicJWKS(): { keys: JWK[] } {
+  const privateKey = createPrivateKey(getPrivatePem());
+  const publicKey = createPublicKey(privateKey);
+  const jwk = publicKey.export({ format: "jwk" }) as JWK;
   return {
-    keys: [{ ...publicJwk, kid: KEY_ID, use: "sig", alg: "ES256" }],
+    keys: [{ ...jwk, kid: KEY_ID, use: "sig", alg: "ES256" }],
   };
 }
