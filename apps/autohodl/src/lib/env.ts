@@ -19,5 +19,10 @@ export const env = {
   get NEXT_PUBLIC_MINI_APP_URL() { return requireEnv("NEXT_PUBLIC_MINI_APP_URL"); },
   get NEXT_PUBLIC_MOONPAY_API_KEY() { return requireEnv("NEXT_PUBLIC_MOONPAY_API_KEY"); },
   get SOLANA_RPC_URL() { return requireEnv("SOLANA_RPC_URL"); },
+  get SOLANA_NETWORK(): "devnet" | "mainnet" {
+    const v = requireEnv("SOLANA_NETWORK");
+    if (v !== "devnet" && v !== "mainnet") throw new Error(`SOLANA_NETWORK must be "devnet" or "mainnet", got: ${v}`);
+    return v;
+  },
   get AUTOHODL_DELEGATE_PUBKEY() { return requireEnv("AUTOHODL_DELEGATE_PUBKEY"); },
 } as const;

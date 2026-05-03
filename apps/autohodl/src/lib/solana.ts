@@ -1,15 +1,11 @@
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { createApproveInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { env } from "./env";
 
 const USDC_MINT: Record<"mainnet" | "devnet", string> = {
   mainnet: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   devnet: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
 };
-
-function getUsdcMint(rpcEndpoint: string): PublicKey {
-  const network = rpcEndpoint.includes("devnet") ? "devnet" : "mainnet";
-  return new PublicKey(USDC_MINT[network]);
-}
 
 // Builds an unsigned SPL Token.approve transaction granting `delegate`
 // authority over the user's USDC token account up to u64::MAX.
@@ -21,7 +17,7 @@ export async function buildTokenApproveTransaction(
 ): Promise<string> {
   const owner = new PublicKey(userWalletAddress);
   const delegate = new PublicKey(delegatePubkeyStr);
-  const mint = getUsdcMint(connection.rpcEndpoint);
+  const mint = new PublicKey(USDC_MINT[env.SOLANA_NETWORK]);
 
   const tokenAccount = getAssociatedTokenAddressSync(mint, owner);
 

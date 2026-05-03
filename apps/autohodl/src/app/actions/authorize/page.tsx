@@ -17,17 +17,19 @@ export default function AuthorizePage() {
 
     async function sign() {
       try {
-        // Ensure session exists — auth via initData if not
-        const meRes = await fetch("/api/me");
-        if (!meRes.ok) {
-          const initData = window.Telegram?.WebApp.initData;
-          if (!initData) throw new Error("Open this via the bot.");
+        // Always re-auth when initData is present so the session reflects
+        // the latest wallet from Redis (guards against stale cookies).
+        const initData = window.Telegram?.WebApp.initData;
+        if (initData) {
           const authRes = await fetch("/api/auth", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ initData }),
           });
           if (!authRes.ok) throw new Error("Auth failed. Try again from the bot.");
+        } else {
+          const meRes = await fetch("/api/me");
+          if (!meRes.ok) throw new Error("Open this via the bot.");
         }
 
         // Server builds the tx, signs with the Privy server wallet, broadcasts

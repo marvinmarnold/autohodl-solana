@@ -4,7 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { Connection } from "@solana/web3.js";
 import type { ActionGetResponse, ActionPostResponse } from "@solana/actions";
 import { env } from "@/lib/env";
-import { signAndSendSolanaTransaction, updatePrivyUserMetadata } from "@/lib/privy";
+import { signAndSendSolanaTransaction } from "@/lib/privy";
+import { setUserSettings } from "@/lib/kv";
 import { buildTokenApproveTransaction } from "@/lib/solana";
 import { type SessionData, sessionOptions } from "@/lib/session";
 
@@ -73,19 +74,19 @@ export async function POST(req: NextRequest) {
 
   let txSignature: string;
   try {
-    txSignature = await signAndSendSolanaTransaction(session.privyWalletId, txBase64);
+    txSignature = await signAndSendSolanaTransaction(session.privyWalletId, txBase64, connection);
   } catch (err) {
     console.error("Privy signing failed:", err);
     return corsJson({ error: "signing_failed" }, 502);
   }
 
-  // Save settings to Privy metadata — non-blocking
-  updatePrivyUserMetadata(session.privyUserId, {
+  // Save settings to KV — non-blocking
+  setUserSettings(session.telegramId, {
     savingsFrequency: freq,
     savingsAmountUsd: amt,
     delegationTxSignature: txSignature,
     delegationSetAt: new Date().toISOString(),
-  }).catch((err) => console.error("Metadata update failed (non-fatal):", err));
+  }).catch((err) => console.error("Settings save failed (non-fatal):", err));
 
   // Send ✅ confirmation + MoonPay CTA to the Telegram chat
   const moonpayApiKey = process.env["NEXT_PUBLIC_MOONPAY_API_KEY"] ?? "";

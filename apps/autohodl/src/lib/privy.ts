@@ -1,4 +1,6 @@
+import { Connection, Transaction } from "@solana/web3.js";
 import { env } from "./env";
+import { getWallet, setWallet } from "./kv";
 
 export class WalletPregenerationError extends Error {
   constructor(
@@ -10,14 +12,8 @@ export class WalletPregenerationError extends Error {
   }
 }
 
-type PrivyUserMetadata = {
-  serverWalletId?: string;
-  serverWalletAddress?: string;
-};
-
 type PrivyUserResponse = {
   id: string; // did:privy:...
-  custom_metadata?: PrivyUserMetadata | null;
 };
 
 type PrivyWalletCreateResponse = {
@@ -26,7 +22,7 @@ type PrivyWalletCreateResponse = {
 };
 
 type PrivySignResponse = {
-  data: { hash: string };
+  data: { signed_transaction: string };
 };
 
 function authHeaders() {
@@ -40,17 +36,10 @@ function authHeaders() {
   };
 }
 
-// Returns the Privy user ID and any previously created server wallet from metadata.
-async function getOrCreatePrivyUser(telegramId: string): Promise<{
-  privyUserId: string;
-  existingWalletAddress: string | null;
-  existingWalletId: string | null;
-}> {
+// Creates or retrieves the Privy user linked to the given Telegram ID.
+async function getOrCreatePrivyUser(telegramId: string): Promise<string> {
   const headers = authHeaders();
 
-  // Create a Privy user linked to the Telegram ID via custom_auth.
-  // Wallet is created separately as a server wallet so the server can sign
-  // on the user's behalf without requiring client-side interaction.
   const createRes = await fetch("https://auth.privy.io/api/v1/users", {
     method: "POST",
     headers,
@@ -64,11 +53,7 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
   if (createRes.ok) {
     const data = (await createRes.json()) as PrivyUserResponse;
     console.log("Privy user created:", data.id);
-    return {
-      privyUserId: data.id,
-      existingWalletAddress: data.custom_metadata?.serverWalletAddress ?? null,
-      existingWalletId: data.custom_metadata?.serverWalletId ?? null,
-    };
+    return data.id;
   }
 
   if (createRes.status === 409) {
@@ -90,11 +75,7 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
     }
     const data = (await lookupRes.json()) as PrivyUserResponse;
     console.log("Privy user found:", data.id);
-    return {
-      privyUserId: data.id,
-      existingWalletAddress: data.custom_metadata?.serverWalletAddress ?? null,
-      existingWalletId: data.custom_metadata?.serverWalletId ?? null,
-    };
+    return data.id;
   }
 
   const body = await createRes.text().catch(() => "(unreadable)");
@@ -133,65 +114,41 @@ export async function pregenerateWallet(telegramId: string): Promise<{
   walletAddress: string;
   privyWalletId: string;
 }> {
-  const { privyUserId, existingWalletAddress, existingWalletId } =
-    await getOrCreatePrivyUser(telegramId);
-
-  if (existingWalletAddress && existingWalletId) {
-    return { privyUserId, walletAddress: existingWalletAddress, privyWalletId: existingWalletId };
+  // KV is the source of truth for wallet idempotency — Privy's free tier
+  // doesn't support custom_metadata writes, so we store the mapping here.
+  const stored = await getWallet(telegramId);
+  if (stored) {
+    console.log("Wallet found in KV for telegram:", telegramId);
+    return {
+      privyUserId: stored.privyUserId,
+      walletAddress: stored.walletAddress,
+      privyWalletId: stored.walletId,
+    };
   }
 
+  const privyUserId = await getOrCreatePrivyUser(telegramId);
   const { address, walletId } = await createServerWallet();
 
-  // Store wallet association in Privy user metadata so we can look it up on
-  // subsequent calls without creating a new wallet each time.
-  await updatePrivyUserMetadata(privyUserId, {
-    serverWalletId: walletId,
-    serverWalletAddress: address,
-  });
+  await setWallet(telegramId, { walletId, walletAddress: address, privyUserId });
 
   return { privyUserId, walletAddress: address, privyWalletId: walletId };
 }
 
-export async function updatePrivyUserMetadata(
-  privyUserId: string,
-  metadata: Record<string, unknown>,
-): Promise<void> {
-  const res = await fetch(
-    `https://auth.privy.io/api/v1/users/${privyUserId}`,
-    {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: JSON.stringify({ custom_metadata: metadata }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Privy metadata update failed: ${res.status}`, body);
-    throw new WalletPregenerationError(
-      `Privy metadata update failed: ${res.status}`,
-      res.status,
-    );
-  }
-}
-
+// Signs the transaction with the Privy server wallet, then broadcasts using
+// our own RPC. Using signTransaction + manual broadcast avoids Privy's
+// internal simulation node, which can reject valid blockhashes from external RPCs.
 export async function signAndSendSolanaTransaction(
   privyWalletId: string,
   serializedTxBase64: string,
+  connection: Connection,
 ): Promise<string> {
-  const isDevnet = env.SOLANA_RPC_URL.includes("devnet");
-  const caip2 = isDevnet
-    ? "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
-    : "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-
   const res = await fetch(
     `https://api.privy.io/v1/wallets/${privyWalletId}/rpc`,
     {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        method: "signAndSendTransaction",
-        caip2,
+        method: "signTransaction",
         params: {
           transaction: serializedTxBase64,
           encoding: "base64",
@@ -202,13 +159,18 @@ export async function signAndSendSolanaTransaction(
 
   if (!res.ok) {
     const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Privy sign+send failed: ${res.status}`, body);
+    console.error(`Privy sign failed: ${res.status}`, body);
     throw new WalletPregenerationError(
-      `Privy sign+send failed: ${res.status}`,
+      `Privy sign failed: ${res.status}`,
       res.status,
     );
   }
 
   const data = (await res.json()) as PrivySignResponse;
-  return data.data.hash;
+  const signedTx = Transaction.from(Buffer.from(data.data.signed_transaction, "base64"));
+  const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+    skipPreflight: true, // we already simulated during build; skip double-simulation
+  });
+  console.log("Transaction broadcast:", signature);
+  return signature;
 }
