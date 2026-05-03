@@ -25,10 +25,6 @@ type PrivyWalletCreateResponse = {
   address: string;
 };
 
-type PrivySignResponse = {
-  data: { hash: string };
-};
-
 function authHeaders() {
   const credentials = Buffer.from(
     `${env.PRIVY_APP_ID}:${env.PRIVY_APP_SECRET}`,
@@ -49,8 +45,8 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
   const headers = authHeaders();
 
   // Create a Privy user linked to the Telegram ID via custom_auth.
-  // No `wallets` field — we create server wallets separately so the server
-  // can sign without user interaction.
+  // Wallet is created separately with owner: { user_id } so the user can
+  // sign client-side via the Privy React SDK.
   const createRes = await fetch("https://auth.privy.io/api/v1/users", {
     method: "POST",
     headers,
@@ -105,25 +101,26 @@ async function getOrCreatePrivyUser(telegramId: string): Promise<{
   );
 }
 
-// Creates a Privy server wallet — no owner, so the server can sign directly.
-async function createServerWallet(): Promise<{ address: string; walletId: string }> {
+// Creates a Privy embedded wallet owned by the Privy user. The user can sign
+// client-side via the React SDK after authenticating with custom auth.
+async function createEmbeddedWallet(privyUserId: string): Promise<{ address: string; walletId: string }> {
   const res = await fetch("https://api.privy.io/v1/wallets", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ chain_type: "solana" }),
+    body: JSON.stringify({ chain_type: "solana", owner: { user_id: privyUserId } }),
   });
 
   if (!res.ok) {
     const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Privy server wallet creation failed: ${res.status}`, body);
+    console.error(`Privy embedded wallet creation failed: ${res.status}`, body);
     throw new WalletPregenerationError(
-      `Privy server wallet creation failed: ${res.status}`,
+      `Privy embedded wallet creation failed: ${res.status}`,
       res.status,
     );
   }
 
   const data = (await res.json()) as PrivyWalletCreateResponse;
-  console.log("Privy server wallet created:", data.address, "id:", data.id);
+  console.log("Privy embedded wallet created:", data.address, "id:", data.id);
   return { address: data.address, walletId: data.id };
 }
 
@@ -139,7 +136,7 @@ export async function pregenerateWallet(telegramId: string): Promise<{
     return { privyUserId, walletAddress: existingWalletAddress, privyWalletId: existingWalletId };
   }
 
-  const { address, walletId } = await createServerWallet();
+  const { address, walletId } = await createEmbeddedWallet(privyUserId);
 
   // Store wallet association in Privy user metadata so we can look it up on
   // subsequent calls without creating a new wallet each time.
@@ -174,40 +171,3 @@ export async function updatePrivyUserMetadata(
   }
 }
 
-export async function signAndSendSolanaTransaction(
-  privyWalletId: string,
-  serializedTxBase64: string,
-): Promise<string> {
-  const isDevnet = env.SOLANA_RPC_URL.includes("devnet");
-  const caip2 = isDevnet
-    ? "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
-    : "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-
-  const res = await fetch(
-    `https://api.privy.io/v1/wallets/${privyWalletId}/rpc`,
-    {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        method: "signAndSendTransaction",
-        caip2,
-        params: {
-          transaction: serializedTxBase64,
-          encoding: "base64",
-        },
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Privy sign+send failed: ${res.status}`, body);
-    throw new WalletPregenerationError(
-      `Privy sign+send failed: ${res.status}`,
-      res.status,
-    );
-  }
-
-  const data = (await res.json()) as PrivySignResponse;
-  return data.data.hash;
-}
