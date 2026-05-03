@@ -35,10 +35,10 @@ fi
 sed -i '' "s|^NEXT_PUBLIC_MINI_APP_URL=.*|NEXT_PUBLIC_MINI_APP_URL=${TUNNEL_URL}|" "$ENV_FILE"
 echo "✓ Updated NEXT_PUBLIC_MINI_APP_URL in $ENV_FILE"
 
-# Set Telegram webhook
+# Set Telegram webhook — include callback_query so button taps are delivered
 RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
   -H "Content-Type: application/json" \
-  -d "{\"url\":\"${TUNNEL_URL}/api/bot\"}")
+  -d "{\"url\":\"${TUNNEL_URL}/api/bot\",\"allowed_updates\":[\"message\",\"callback_query\",\"web_app_data\"]}")
 
 if echo "$RESPONSE" | grep -q '"ok":true'; then
   echo "✓ Telegram webhook set to ${TUNNEL_URL}/api/bot"
