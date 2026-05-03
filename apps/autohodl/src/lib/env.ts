@@ -20,5 +20,4 @@ export const env = {
   get NEXT_PUBLIC_MOONPAY_API_KEY() { return requireEnv("NEXT_PUBLIC_MOONPAY_API_KEY"); },
   get SOLANA_RPC_URL() { return requireEnv("SOLANA_RPC_URL"); },
   get AUTOHODL_DELEGATE_PUBKEY() { return requireEnv("AUTOHODL_DELEGATE_PUBKEY"); },
-  get PRIVY_CUSTOM_AUTH_PRIVATE_KEY() { return requireEnv("PRIVY_CUSTOM_AUTH_PRIVATE_KEY"); },
 } as const;
