@@ -2,10 +2,10 @@ import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { Connection } from "@solana/web3.js";
-import type { ActionGetResponse, ActionPostResponse } from "@solana/actions";
+import type { ActionGetResponse } from "@solana/actions";
 import { env } from "@/lib/env";
 import { signAndSendSolanaTransaction } from "@/lib/privy";
-import { setUserSettings } from "@/lib/kv";
+import { getPendingSettings, getUserSettings, setPendingSettings, setUserSettings } from "@/lib/kv";
 import { buildTokenApproveTransaction } from "@/lib/solana";
 import { type SessionData, sessionOptions } from "@/lib/session";
 
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
   const amt = body.amt ?? body.amount ?? Number(req.nextUrl.searchParams.get("amt") ?? req.nextUrl.searchParams.get("amount") ?? "20");
   const freqLabel = { daily: "day", weekly: "week", monthly: "month" }[freq] ?? "period";
 
-  const connection = new Connection(env.SOLANA_RPC_URL, "confirmed");
+  const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
 
   let txBase64: string;
   try {
@@ -80,48 +80,60 @@ export async function POST(req: NextRequest) {
     return corsJson({ error: "signing_failed" }, 502);
   }
 
-  // Save settings to KV — non-blocking
-  setUserSettings(session.telegramId, {
+  const savingsFields = {
     savingsFrequency: freq,
     savingsAmountUsd: amt,
+    savingsStrategy: "reflect" as const,
     delegationTxSignature: txSignature,
     delegationSetAt: new Date().toISOString(),
-  }).catch((err) => console.error("Settings save failed (non-fatal):", err));
+  };
 
-  // Send ✅ confirmation + MoonPay CTA to the Telegram chat
-  const moonpayApiKey = process.env["NEXT_PUBLIC_MOONPAY_API_KEY"] ?? "";
-  const moonpayUrl = moonpayApiKey
-    ? `https://buy.moonpay.com?${new URLSearchParams({ apiKey: moonpayApiKey, currencyCode: "usdc_sol", walletAddress: session.walletAddress, baseCurrencyCode: "usd", baseCurrencyAmount: String(amt) }).toString()}`
-    : null;
+  // Write pending for the MoonPay confirmation flow.
+  setPendingSettings(session.telegramId, savingsFields).catch(
+    (err) => console.error("Pending settings save failed (non-fatal):", err),
+  );
 
-  const replyMarkup = moonpayUrl
-    ? { inline_keyboard: [[{ text: "Never forget — setup automatic deposits 🔁", url: moonpayUrl }]] }
-    : undefined;
+  // Immediately persist savings schedule to confirmed settings so /start
+  // reflects the new values even if the user never completes MoonPay.
+  // Preserve any existing funding config.
+  Promise.all([getUserSettings(session.telegramId), getPendingSettings(session.telegramId)])
+    .then(([confirmed]) => {
+      return setUserSettings(session.telegramId, {
+        ...savingsFields,
+        fundingFrequency: confirmed?.fundingFrequency,
+        fundingAmountUsd: confirmed?.fundingAmountUsd,
+        fundingConfiguredAt: confirmed?.fundingConfiguredAt,
+      });
+    })
+    .catch((err) => console.error("Confirmed settings update failed (non-fatal):", err));
 
-  await sendTelegramMessage(session.telegramId, {
-    text: `✅ Authorization set.\n\nWe'll send you a reminder to deposit into this wallet. Our agentic protocol will optimize your yield.`,
-    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-  });
+  // Build MoonPay URL — client will redirect to this after signing
+  const moonpayUrl = buildMoonpayUrl(session.walletAddress, freq, amt);
 
-  const response: ActionPostResponse = {
+  return corsJson({
     type: "transaction",
     transaction: txBase64,
     message: `Authorized $${amt}/${freqLabel} savings. Tx: ${txSignature}`,
-  };
-  return corsJson(response);
+    moonpayUrl,
+    walletAddress: session.walletAddress,
+  });
 }
 
-async function sendTelegramMessage(chatId: string, message: Record<string, unknown>): Promise<void> {
-  const res = await fetch(
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, ...message }),
-    },
-  );
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Telegram sendMessage failed: ${res.status}`, body);
-  }
+function buildMoonpayUrl(walletAddress: string, freq: string, amt: number): string | null {
+  const apiKey = process.env["NEXT_PUBLIC_MOONPAY_API_KEY"];
+  if (!apiKey) return null;
+
+  const successUrl = new URL(`${env.NEXT_PUBLIC_MINI_APP_URL}/actions/authorize/success`);
+  successUrl.searchParams.set("freq", freq);
+  successUrl.searchParams.set("amt", String(amt));
+
+  const url = new URL("https://buy.moonpay.com");
+  url.searchParams.set("apiKey", apiKey);
+  // usdc_sol has supportsTestMode:false — use sol for sandbox, usdc_sol for live
+  url.searchParams.set("currencyCode", apiKey.startsWith("pk_test_") ? "sol" : "usdc_sol");
+  url.searchParams.set("walletAddress", walletAddress);
+  url.searchParams.set("baseCurrencyCode", "usd");
+  url.searchParams.set("baseCurrencyAmount", String(amt));
+  url.searchParams.set("redirectUrl", successUrl.toString());
+  return url.toString();
 }

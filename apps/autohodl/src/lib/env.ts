@@ -18,11 +18,13 @@ export const env = {
   // but are also accessible via process.env in server code.
   get NEXT_PUBLIC_MINI_APP_URL() { return requireEnv("NEXT_PUBLIC_MINI_APP_URL"); },
   get NEXT_PUBLIC_MOONPAY_API_KEY() { return requireEnv("NEXT_PUBLIC_MOONPAY_API_KEY"); },
-  get SOLANA_RPC_URL() { return requireEnv("SOLANA_RPC_URL"); },
+  get NEXT_PUBLIC_SOLANA_RPC_URL() { return requireEnv("NEXT_PUBLIC_SOLANA_RPC_URL"); },
   get SOLANA_NETWORK(): "devnet" | "mainnet" {
     const v = requireEnv("SOLANA_NETWORK");
     if (v !== "devnet" && v !== "mainnet") throw new Error(`SOLANA_NETWORK must be "devnet" or "mainnet", got: ${v}`);
     return v;
   },
   get AUTOHODL_DELEGATE_PUBKEY() { return requireEnv("AUTOHODL_DELEGATE_PUBKEY"); },
+  // Base64-encoded 64-byte secret key for the demo funder wallet (airdrop source).
+  get FUNDER_PRIVATE_KEY() { return requireEnv("FUNDER_PRIVATE_KEY"); },
 } as const;

@@ -32,7 +32,6 @@ export default function AuthorizePage() {
           if (!meRes.ok) throw new Error("Open this via the bot.");
         }
 
-        // Server builds the tx, signs with the Privy server wallet, broadcasts
         const res = await fetch(`/api/actions/authorize?freq=${freq}&amt=${amt}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -44,8 +43,10 @@ export default function AuthorizePage() {
           throw new Error(err.error ?? `Server error ${res.status}`);
         }
 
-        setStatus("done");
-        setTimeout(() => window.Telegram?.WebApp.close(), 1500);
+        const data = (await res.json().catch(() => ({}))) as { walletAddress?: string };
+        const params = new URLSearchParams({ freq, amt: String(amt) });
+        if (data.walletAddress) params.set("wallet", data.walletAddress);
+        window.location.href = `/actions/authorize/success?${params}`;
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : "Unexpected error");
         setStatus("error");
@@ -55,30 +56,28 @@ export default function AuthorizePage() {
     sign();
   }, []);
 
-  if (status === "done") {
-    return (
-      <main style={{ padding: "2rem", textAlign: "center" }}>
-        <p style={{ fontSize: "2rem" }}>✅</p>
-        <p>Authorized. Check your messages.</p>
-      </main>
-    );
-  }
-
   if (status === "error") {
     return (
-      <main style={{ padding: "2rem", textAlign: "center" }}>
-        <p style={{ fontSize: "1.5rem" }}>❌</p>
-        <p>{errorMsg}</p>
-        <p style={{ color: "#888", fontSize: "0.8rem" }}>Close this and try again from the bot.</p>
+      <main style={centeredStyle}>
+        <p style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>❌</p>
+        <p style={{ fontWeight: 600, marginBottom: "0.4rem", color: "var(--text)" }}>{errorMsg}</p>
+        <p style={{ fontSize: "0.85rem", color: "var(--text-hint)" }}>Close this and try again from the bot.</p>
       </main>
     );
   }
 
   return (
-    <main style={{ padding: "2rem", textAlign: "center" }}>
-      <p style={{ fontSize: "1.5rem" }}>⏳</p>
-      <p>Authorizing savings…</p>
-      <p style={{ color: "#888", fontSize: "0.85rem" }}>This takes a few seconds.</p>
+    <main style={centeredStyle}>
+      <p style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>⏳</p>
+      <p style={{ fontWeight: 600, marginBottom: "0.4rem", color: "var(--text)" }}>Authorizing your savings…</p>
+      <p style={{ fontSize: "0.85rem", color: "var(--text-hint)" }}>This takes a few seconds.</p>
     </main>
   );
 }
+
+const centeredStyle: React.CSSProperties = {
+  padding: "3rem 1.5rem",
+  textAlign: "center",
+  maxWidth: 400,
+  margin: "0 auto",
+};

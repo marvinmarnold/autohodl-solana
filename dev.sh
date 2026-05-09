@@ -43,7 +43,7 @@ echo "✓ Updated NEXT_PUBLIC_MINI_APP_URL in $ENV_FILE"
 # Set Telegram webhook — include callback_query so button taps are delivered
 RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
   -H "Content-Type: application/json" \
-  -d "{\"url\":\"${TUNNEL_URL}/api/bot\",\"allowed_updates\":[\"message\",\"callback_query\",\"web_app_data\"]}")
+  -d "{\"url\":\"${TUNNEL_URL}/api/bot\",\"allowed_updates\":[\"message\",\"callback_query\",\"web_app_data\"],\"drop_pending_updates\":true}")
 
 if echo "$RESPONSE" | grep -q '"ok":true'; then
   echo "✓ Telegram webhook set to ${TUNNEL_URL}/api/bot"
