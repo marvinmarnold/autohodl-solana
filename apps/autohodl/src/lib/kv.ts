@@ -5,9 +5,11 @@ if (!process.env["REDIS_URL"]) throw new Error("Missing required environment var
 export const redis = new Redis(process.env["REDIS_URL"]);
 
 export type WalletRecord = {
-  walletId: string;
   walletAddress: string;
-  privyUserId: string;
+  walletType: "privy" | "external";
+  // Privy-only (absent for external wallets):
+  walletId?: string;
+  privyUserId?: string;
 };
 
 export type UserSettings = {
@@ -38,7 +40,30 @@ export async function getWallet(telegramId: string): Promise<WalletRecord | null
 }
 
 export async function setWallet(telegramId: string, record: WalletRecord): Promise<void> {
-  await redis.set(`wallet:telegram:${telegramId}`, JSON.stringify(record));
+  await Promise.all([
+    redis.set(`wallet:telegram:${telegramId}`, JSON.stringify(record)),
+    redis.set(`index:wallet:address:${record.walletAddress}`, telegramId),
+  ]);
+}
+
+export async function getTelegramIdByWalletAddress(walletAddress: string): Promise<string | null> {
+  return redis.get(`index:wallet:address:${walletAddress}`);
+}
+
+// ── Pending state (Redis-backed — survives serverless cold starts) ────────────
+
+export async function getPending<T>(type: string, telegramId: string): Promise<T | null> {
+  const raw = await redis.get(`pending:${type}:${telegramId}`);
+  if (!raw) return null;
+  return JSON.parse(raw) as T;
+}
+
+export async function setPending<T>(type: string, telegramId: string, value: T, ttlSeconds: number): Promise<void> {
+  await redis.set(`pending:${type}:${telegramId}`, JSON.stringify(value), "EX", ttlSeconds);
+}
+
+export async function deletePending(type: string, telegramId: string): Promise<void> {
+  await redis.del(`pending:${type}:${telegramId}`);
 }
 
 // Pending: written when Token.approve is signed. Funding fields are absent

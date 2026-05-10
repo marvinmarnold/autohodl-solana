@@ -1,0 +1,22 @@
+{
+  "name": "@autohodl/moonpay-skill",
+  "version": "0.1.0",
+  "description": "MoonPay Skill: set up autoHODL savings and process any Solana Action from an AI agent.",
+  "bin": {
+    "moonpay-skill-autohodl": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --project tsconfig.json --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@autohodl/solana-action-client": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

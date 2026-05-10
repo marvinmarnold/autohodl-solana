@@ -2,10 +2,30 @@ import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { getUserSettings } from "@/lib/kv";
+import { getUserSettings, getWallet } from "@/lib/kv";
+import { fetchUsdcBalance, buildMetricsMessage } from "@/lib/solana";
 import { type SessionData, sessionOptions } from "@/lib/session";
 
-const PERIOD: Record<string, string> = { daily: "day", weekly: "week", monthly: "month" };
+type MessageOptions = {
+  parse_mode?: "Markdown" | "HTML";
+  link_preview_options?: { is_disabled?: boolean };
+  reply_markup?: object;
+};
+
+async function sendBotMessage(chatId: string, text: string, options: MessageOptions = {}): Promise<void> {
+  const res = await fetch(
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, ...options }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    console.error(`Telegram sendMessage failed: ${res.status}`, body);
+  }
+}
 
 export async function POST(req: NextRequest) {
   void req;
@@ -14,49 +34,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
 
-  const settings = await getUserSettings(session.telegramId);
+  const [settings, walletRecord] = await Promise.all([
+    getUserSettings(session.telegramId),
+    getWallet(session.telegramId),
+  ]);
+
   if (!settings) {
-    return NextResponse.json({ ok: true }); // nothing to confirm yet
+    return NextResponse.json({ ok: true });
   }
 
-  const sp = PERIOD[settings.savingsFrequency] ?? settings.savingsFrequency;
-  const hasFunding = settings.fundingAmountUsd != null;
-  const fp = settings.fundingFrequency ? (PERIOD[settings.fundingFrequency] ?? settings.fundingFrequency) : null;
+  const balance = walletRecord ? await fetchUsdcBalance(walletRecord.walletAddress) : null;
 
-  const lines: string[] = [
-    hasFunding ? "🎉 All set!" : "✅ Savings schedule saved",
-    "",
-    `📊 *Savings schedule*`,
-    `$${settings.savingsAmountUsd} / ${sp} → Reflect yield`,
-  ];
+  await sendBotMessage(session.telegramId, "✅ Settings updated.");
 
-  if (hasFunding && fp) {
-    lines.push(
-      "",
-      "💳 *Automatic funding*",
-      `$${settings.fundingAmountUsd} / ${fp} via MoonPay`,
-      "",
-      "In sync ✓",
+  if (walletRecord) {
+    await sendBotMessage(
+      session.telegramId,
+      buildMetricsMessage(balance, walletRecord.walletAddress, settings.fundingAmountUsd != null),
+      { parse_mode: "Markdown", link_preview_options: { is_disabled: true } },
     );
-  } else {
-    lines.push("", "💳 *Automatic funding*", "Not configured yet");
   }
 
-  await sendBotMessage(session.telegramId, lines.join("\n"));
-  return NextResponse.json({ ok: true });
-}
-
-async function sendBotMessage(chatId: string, text: string): Promise<void> {
-  const res = await fetch(
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+  const hasBalance = balance !== null && balance > 0;
+  await sendBotMessage(session.telegramId, "What would you like to do?", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "📊 Report", callback_data: "action:report" },
+          { text: "⚙️ Settings", callback_data: "action:settings" },
+        ],
+        [
+          { text: "💵 Deposit", callback_data: "action:deposit" },
+          ...(hasBalance ? [{ text: "💸 Withdraw", callback_data: "action:withdraw" }] : []),
+        ],
+      ],
     },
-  );
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(unreadable)");
-    console.error(`Telegram sendMessage failed: ${res.status}`, body);
-  }
+  });
+
+  return NextResponse.json({ ok: true });
 }

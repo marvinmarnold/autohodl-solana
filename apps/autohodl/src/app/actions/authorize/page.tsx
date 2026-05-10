@@ -1,76 +1,60 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type Status = "signing" | "done" | "error";
+import { useMemo, useState } from "react";
+import { useTelegramAuth, TelegramBlink } from "@autohodl/blinks-telegram/webview";
+import { PrivyServerAdapter } from "@/lib/privy-blink-adapter";
 
 export default function AuthorizePage() {
-  const [status, setStatus] = useState<Status>("signing");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.Telegram?.WebApp.ready();
-
+  const [freq] = useState(() => {
+    if (typeof window === "undefined") return "weekly";
+    return new URLSearchParams(window.location.search).get("freq") ?? "weekly";
+  });
+  const [amt] = useState(() => {
+    if (typeof window === "undefined") return 20;
     const p = new URLSearchParams(window.location.search);
-    const freq = p.get("freq") ?? "weekly";
-    const amt = Number(p.get("amount") ?? p.get("amt") ?? "20");
+    return Number(p.get("amount") ?? p.get("amt") ?? "20");
+  });
 
-    async function sign() {
-      try {
-        // Always re-auth when initData is present so the session reflects
-        // the latest wallet from Redis (guards against stale cookies).
-        const initData = window.Telegram?.WebApp.initData;
-        if (initData) {
-          const authRes = await fetch("/api/auth", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ initData }),
-          });
-          if (!authRes.ok) throw new Error("Auth failed. Try again from the bot.");
-        } else {
-          const meRes = await fetch("/api/me");
-          if (!meRes.ok) throw new Error("Open this via the bot.");
-        }
+  const { status, walletAddress, error } = useTelegramAuth();
 
-        const res = await fetch(`/api/actions/authorize?freq=${freq}&amt=${amt}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ freq, amt }),
-        });
-
-        if (!res.ok) {
-          const err = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(err.error ?? `Server error ${res.status}`);
-        }
-
-        const data = (await res.json().catch(() => ({}))) as { walletAddress?: string };
-        const params = new URLSearchParams({ freq, amt: String(amt) });
-        if (data.walletAddress) params.set("wallet", data.walletAddress);
-        window.location.href = `/actions/authorize/success?${params}`;
-      } catch (err) {
-        setErrorMsg(err instanceof Error ? err.message : "Unexpected error");
-        setStatus("error");
-      }
-    }
-
-    sign();
-  }, []);
+  const adapter = useMemo(() => {
+    if (!walletAddress) return null;
+    return new PrivyServerAdapter(walletAddress, freq, amt);
+  }, [walletAddress, freq, amt]);
 
   if (status === "error") {
     return (
       <main style={centeredStyle}>
         <p style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>❌</p>
-        <p style={{ fontWeight: 600, marginBottom: "0.4rem", color: "var(--text)" }}>{errorMsg}</p>
-        <p style={{ fontSize: "0.85rem", color: "var(--text-hint)" }}>Close this and try again from the bot.</p>
+        <p style={{ fontWeight: 600, marginBottom: "0.4rem" }}>{error}</p>
+        <p style={{ fontSize: "0.85rem", opacity: 0.6 }}>Close this and try again from the bot.</p>
       </main>
     );
   }
 
+  if (status === "pending" || !adapter) {
+    return (
+      <main style={centeredStyle}>
+        <p style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>⏳</p>
+        <p style={{ fontWeight: 600 }}>Loading…</p>
+      </main>
+    );
+  }
+
+  const actionUrl = `${window.location.origin}/api/actions/authorize/webview?freq=${freq}&amount=${amt}`;
+
   return (
-    <main style={centeredStyle}>
-      <p style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>⏳</p>
-      <p style={{ fontWeight: 600, marginBottom: "0.4rem", color: "var(--text)" }}>Authorizing your savings…</p>
-      <p style={{ fontSize: "0.85rem", color: "var(--text-hint)" }}>This takes a few seconds.</p>
+    <main style={{ padding: "1rem", maxWidth: 420, margin: "0 auto" }}>
+      <TelegramBlink
+        actionUrl={actionUrl}
+        adapter={adapter}
+        stylePreset="default"
+        onSuccess={() => {
+          const params = new URLSearchParams({ freq, amt: String(amt), wallet: walletAddress ?? "" });
+          window.location.href = `/actions/authorize/success?${params}`;
+        }}
+        onError={(reason) => console.error("Blink action error:", reason)}
+      />
     </main>
   );
 }

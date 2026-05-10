@@ -117,7 +117,7 @@ export async function pregenerateWallet(telegramId: string): Promise<{
   // KV is the source of truth for wallet idempotency — Privy's free tier
   // doesn't support custom_metadata writes, so we store the mapping here.
   const stored = await getWallet(telegramId);
-  if (stored) {
+  if (stored?.walletType === "privy" && stored.privyUserId && stored.walletId) {
     console.log("Wallet found in KV for telegram:", telegramId);
     return {
       privyUserId: stored.privyUserId,
@@ -129,7 +129,7 @@ export async function pregenerateWallet(telegramId: string): Promise<{
   const privyUserId = await getOrCreatePrivyUser(telegramId);
   const { address, walletId } = await createServerWallet();
 
-  await setWallet(telegramId, { walletId, walletAddress: address, privyUserId });
+  await setWallet(telegramId, { walletType: "privy", walletId, walletAddress: address, privyUserId });
 
   return { privyUserId, walletAddress: address, privyWalletId: walletId };
 }
