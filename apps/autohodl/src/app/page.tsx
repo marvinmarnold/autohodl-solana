@@ -8,15 +8,25 @@ type WalletState =
   | { status: "no-telegram" }
   | { status: "error"; message: string };
 
+function buildMoonpayUrl(walletAddress: string, amountUsd: number): string {
+  const params = new URLSearchParams({
+    apiKey: process.env.NEXT_PUBLIC_MOONPAY_API_KEY ?? "",
+    currencyCode: "usdc_sol",
+    walletAddress,
+    baseCurrencyCode: "usd",
+    baseCurrencyAmount: String(amountUsd),
+  });
+  return `https://buy.moonpay.com?${params.toString()}`;
+}
+
 export default function Page() {
   const [state, setState] = useState<WalletState>({ status: "loading" });
+  const [amount, setAmount] = useState(20);
 
   useEffect(() => {
-    // Signal to Telegram that the Mini App is ready (hides the loading spinner).
     window.Telegram?.WebApp.ready();
 
     async function init() {
-      // Fast path: existing session cookie — no need to hit Privy again.
       const meRes = await fetch("/api/me");
       if (meRes.ok) {
         const data = (await meRes.json()) as { walletAddress: string };
@@ -24,10 +34,8 @@ export default function Page() {
         return;
       }
 
-      // No session — authenticate via initData from Telegram.
       const initData = window.Telegram?.WebApp.initData;
       if (!initData) {
-        // Not inside Telegram — show a helpful message instead of an error.
         setState({ status: "no-telegram" });
         return;
       }
@@ -57,11 +65,40 @@ export default function Page() {
   if (state.status === "loading") return <p>Loading...</p>;
   if (state.status === "no-telegram") return <p>Open this app inside Telegram.</p>;
   if (state.status === "error") return <p>Error: {state.message}</p>;
+
+  const { walletAddress } = state;
+
+  function openMoonpay() {
+    const url = buildMoonpayUrl(walletAddress, amount);
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.openLink(url);
+    } else {
+      window.open(url, "_blank");
+    }
+  }
+
   return (
     <main>
       <h1>autoHODL</h1>
       <p>Your Solana wallet:</p>
-      <code>{state.walletAddress}</code>
+      <code>{walletAddress}</code>
+
+      <section>
+        <label htmlFor="amount">How much do you want to save?</label>
+        <div>
+          <input
+            id="amount"
+            type="number"
+            min={1}
+            value={amount}
+            onChange={(e) => setAmount(Math.max(1, Number(e.target.value)))}
+          />
+          <span>/ month</span>
+        </div>
+        <button type="button" onClick={openMoonpay}>
+          Set up monthly savings
+        </button>
+      </section>
     </main>
   );
 }

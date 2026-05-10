@@ -9,6 +9,10 @@ declare global {
         initData: string;
         /** Signals to Telegram that the Mini App is ready to display. */
         ready: () => void;
+        /** Opens a URL in Telegram's in-app browser. */
+        openLink: (url: string) => void;
+        /** Closes the Mini App WebView. */
+        close: () => void;
       };
     };
   }

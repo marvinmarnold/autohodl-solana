@@ -4,20 +4,20 @@ export type SessionData = {
   telegramId: string;
   privyUserId: string;
   walletAddress: string;
+  privyWalletId: string;
 };
 
-// sameSite: "none" is required because Telegram WebView opens the Mini App
-// in a cross-site iframe context. Without it, browsers block the cookie.
-// Requires secure: true in production (Chrome enforces this for sameSite=none).
+// sameSite: "none" is required for Telegram WebView (cross-site iframe context).
+// secure: true is required whenever sameSite is "none" — mobile browsers (iOS
+// WebKit, Android Chrome) strictly drop SameSite=None cookies without Secure.
+// This is safe in dev because we always run behind an HTTPS cloudflare tunnel.
 export const sessionOptions: SessionOptions = {
   cookieName: "autohodl_session",
-  // SESSION_SECRET must be 32+ characters — iron-session uses it as the
-  // encryption key. Treat it with the same care as a private key.
   password: process.env["SESSION_SECRET"] ?? "",
-  ttl: 60 * 60 * 24 * 30, // 30 days — long enough to avoid re-creating Privy users
+  ttl: 60 * 60 * 24 * 30,
   cookieOptions: {
     httpOnly: true,
-    secure: process.env["NODE_ENV"] === "production",
+    secure: true,
     sameSite: "none" as const,
   },
 };
