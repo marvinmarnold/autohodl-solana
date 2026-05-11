@@ -1,7 +1,7 @@
 {
   "name": "autohodl",
   "version": "0.1.0",
-  "description": "Set up autoHODL scheduled USDC savings on Solana. Includes process_solana_action — a generic tool to sign and broadcast any Solana Action from an AI agent.",
-  "tools": ["autohodl_lookup", "autohodl_status", "process_solana_action"],
-  "instructions": "Use autohodl_lookup to check if a wallet has autoHODL configured. If not, instruct the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram, then return here. Once registered, confirm the savings frequency and amount, then call process_solana_action with the authorize Action URL to sign the Token.approve and activate savings."
+  "description": "Set up autoHODL scheduled USDC savings on Solana. Works alongside MoonPay CLI (mp mcp) for signing — no additional server required.",
+  "tools": ["autohodl_lookup", "autohodl_status", "solana_action_prepare", "solana_action_confirm"],
+  "instructions": "To set up autoHODL savings: (1) Call autohodl_lookup with the user's Solana wallet address. If the result is null, tell the user to send `/start <walletAddress>` to @autohodl_bot on Telegram and wait for them to confirm before continuing. (2) Confirm the savings frequency (daily/weekly/monthly) and amount in USD with the user. (3) Call solana_action_prepare with actionUrl='https://autohodl.vercel.app/api/actions/authorize', account=<walletAddress>, and params={ freq: <frequency>, amount: <usdAmount> }. This returns { txBase64, confirmUrl, message }. (4) Use MoonPay tools to sign and broadcast: call transaction_sign with wallet='main', chain='solana', transaction=<txBase64> to get the signed transaction; then call transaction_send with chain='solana', transaction=<signedTx> to get the signature. (5) If confirmUrl is non-null, call solana_action_confirm with the confirmUrl from step 3 and the signature from step 4. (6) Report to the user: autoHODL is live and their savings schedule is active."
 }
