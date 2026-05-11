@@ -1,8 +1,17 @@
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { getOrCreateAssociatedTokenAccount, transfer } from "@solana/spl-token";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  TokenAccountNotFoundError,
+  TokenInvalidAccountOwnerError,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+  getAccount,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import { env } from "@/lib/env";
 import { redis, getUserSettings } from "@/lib/kv";
 import { assertFunderSolvent, getUsdcMint } from "@/lib/solana";
@@ -43,7 +52,6 @@ export async function POST(req: NextRequest) {
       await assertFunderSolvent(connection, funder, AIRDROP_AMOUNT);
 
       // Resolve funder's USDC token account for the transfer call below.
-      const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
       const funderAccounts = await connection.getParsedTokenAccountsByOwner(
         funder.publicKey,
         { programId: TOKEN_PROGRAM_ID },
@@ -57,23 +65,47 @@ export async function POST(req: NextRequest) {
       }
       const funderAccountPubkey = funderTokenAccount.pubkey;
 
-      // Create recipient ATA if needed — funder pays SOL for rent.
-      // allowOwnerOffCurve=true required because the vault is a Squads PDA (off-curve).
-      const recipientAta = await getOrCreateAssociatedTokenAccount(
-        connection,
-        funder,
-        usdcMint,
-        recipient,
-        true,
+      // Priority fee — required on mainnet for reliable transaction landing.
+      const priorityFee = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 });
+
+      // Create recipient ATA with priority fee if it doesn't exist yet.
+      // (allowOwnerOffCurve implicitly handled by getAssociatedTokenAddressSync with allowOwnerOffCurve=true)
+      const recipientAtaAddress = getAssociatedTokenAddressSync(usdcMint, recipient, true);
+      try {
+        await getAccount(connection, recipientAtaAddress);
+      } catch (err) {
+        if (err instanceof TokenAccountNotFoundError || err instanceof TokenInvalidAccountOwnerError) {
+          const { blockhash: createBlockhash } = await connection.getLatestBlockhash();
+          const createAtaTx = new Transaction();
+          createAtaTx.recentBlockhash = createBlockhash;
+          createAtaTx.feePayer = funder.publicKey;
+          createAtaTx.add(
+            priorityFee,
+            createAssociatedTokenAccountInstruction(
+              funder.publicKey,
+              recipientAtaAddress,
+              recipient,
+              usdcMint,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID,
+            ),
+          );
+          await sendAndConfirmTransaction(connection, createAtaTx, [funder], { commitment: "confirmed" });
+        } else {
+          throw err;
+        }
+      }
+
+      // Transfer USDC to recipient ATA with priority fee.
+      const { blockhash } = await connection.getLatestBlockhash();
+      const transferTx = new Transaction();
+      transferTx.recentBlockhash = blockhash;
+      transferTx.feePayer = funder.publicKey;
+      transferTx.add(
+        priorityFee,
+        createTransferInstruction(funderAccountPubkey, recipientAtaAddress, funder.publicKey, AIRDROP_AMOUNT),
       );
-      await transfer(
-        connection,
-        funder,
-        funderAccountPubkey,
-        recipientAta.address,
-        funder,
-        AIRDROP_AMOUNT,
-      );
+      await sendAndConfirmTransaction(connection, transferTx, [funder], { commitment: "confirmed" });
       await redis.set(airdropKey, "1");
       airdropStatus = "sent";
       console.log("Airdrop: sent", AIRDROP_AMOUNT.toString(), "to vault", vaultAddress);
