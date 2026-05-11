@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
+    "build": "bun run --filter '@autohodl/blinks-telegram' build && bun run --filter '@autohodl/grammy-agent' build && bun run --filter '@autohodl/solana-action-client' build && cd apps/autohodl && bun run build",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "fmt": "biome format --write .",
