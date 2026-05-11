@@ -1,8 +1,18 @@
 import Redis from "ioredis";
 
-if (!process.env["REDIS_URL"]) throw new Error("Missing required environment variable: REDIS_URL");
-
-export const redis = new Redis(process.env["REDIS_URL"]);
+// Deferred singleton — not created at module load so Next.js static generation
+// during build doesn't require REDIS_URL to be present.
+let _redis: Redis | undefined;
+export const redis = new Proxy({} as Redis, {
+  get(_: Redis, prop: string | symbol) {
+    if (!_redis) {
+      const url = process.env["REDIS_URL"];
+      if (!url) throw new Error("Missing required environment variable: REDIS_URL");
+      _redis = new Redis(url);
+    }
+    return (_redis as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
 
 export type WalletRecord = {
   walletAddress: string;
