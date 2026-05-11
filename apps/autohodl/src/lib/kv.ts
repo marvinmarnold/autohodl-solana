@@ -10,6 +10,8 @@ export type WalletRecord = {
   // Privy-only (absent for external wallets):
   walletId?: string;
   privyUserId?: string;
+  // Squads vault PDA derived from walletAddress (absent for records created before this field was added):
+  vaultAddress?: string;
 };
 
 export type UserSettings = {

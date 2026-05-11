@@ -3,6 +3,7 @@ import { Connection } from "@solana/web3.js";
 import { env } from "@/lib/env";
 import { getWallet, getUserSettings } from "@/lib/kv";
 import { fetchUsdcBalance, buildMetricsMessage } from "@/lib/solana";
+import { getSquadsVaultAddress } from "@/lib/squads";
 import { persistSettings } from "@/lib/settings";
 
 const CORS_HEADERS = {
@@ -44,13 +45,13 @@ export async function POST(req: NextRequest) {
   const url = req.nextUrl;
   const body = (await req.json().catch(() => ({}))) as { signature?: string };
 
-  const telegramId = url.searchParams.get("telegramId");
+  const telegramId = url.searchParams.get("telegramId"); // null for cold opens
   const freq = url.searchParams.get("freq") ?? "weekly";
   const amount = Number(url.searchParams.get("amount") ?? "20");
   const wallet = url.searchParams.get("wallet");
   const signature = body.signature;
 
-  if (!telegramId || !wallet || !signature) {
+  if (!wallet || !signature) {
     return corsJson({ error: "missing required params" }, 400);
   }
 
@@ -69,21 +70,32 @@ export async function POST(req: NextRequest) {
     return corsJson({ error: "transaction verification failed" }, 400);
   }
 
-  await persistSettings(telegramId, freq, amount, wallet, signature);
+  if (telegramId) {
+    await persistSettings(telegramId, freq, amount, wallet, signature);
+  }
 
-  // Send bot confirmation to user
+  // Skip bot notification for cold opens with no linked Telegram account.
+  if (!telegramId) {
+    console.log("[confirm] cold open — no telegramId, skipping bot notification. wallet:", wallet);
+    return corsJson({ type: "completed", message: "✅ Savings authorized!" });
+  }
+
+  // Send bot confirmation to linked user.
   const [walletRecord, settings] = await Promise.all([
     getWallet(telegramId),
     getUserSettings(telegramId),
   ]);
-  const balance = walletRecord ? await fetchUsdcBalance(walletRecord.walletAddress) : null;
+  const vaultAddress = walletRecord
+    ? (walletRecord.vaultAddress ?? getSquadsVaultAddress(walletRecord.walletAddress))
+    : null;
+  const balance = vaultAddress ? await fetchUsdcBalance(vaultAddress) : null;
 
   await sendBotMessage(telegramId, "✅ Settings updated.");
 
-  if (walletRecord) {
+  if (walletRecord && vaultAddress) {
     await sendBotMessage(
       telegramId,
-      buildMetricsMessage(balance, walletRecord.walletAddress, settings?.fundingAmountUsd != null),
+      buildMetricsMessage(balance, vaultAddress, settings?.fundingAmountUsd != null, walletRecord.walletAddress),
       { parse_mode: "Markdown", link_preview_options: { is_disabled: true } },
     );
   }

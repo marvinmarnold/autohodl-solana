@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Script from "next/script";
+import { TelegramScript } from "@/components/TelegramScript";
 
 export const metadata: Metadata = {
   title: "autoHODL",
@@ -26,6 +26,7 @@ export default function RootLayout({
             --divider: #e5e5ea;
             --btn-secondary-bg: #e5e5ea;
             --btn-secondary-text: #1c1c1e;
+            --bg-code: #f0f0f5;
           }
           @media (prefers-color-scheme: dark) {
             :root {
@@ -38,6 +39,7 @@ export default function RootLayout({
               --divider: #38383a;
               --btn-secondary-bg: #3a3a3c;
               --btn-secondary-text: #ffffff;
+              --bg-code: #3a3a3c;
             }
           }
           * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,10 +51,7 @@ export default function RootLayout({
         `}</style>
       </head>
       <body>
-        <Script
-          src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
-        />
+        <TelegramScript />
         {children}
       </body>
     </html>

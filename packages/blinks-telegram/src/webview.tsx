@@ -3,7 +3,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Blink, useAction, type BlinkAdapter, type BlinkSupportStrategy } from "@dialectlabs/blinks";
+import { setProxyUrl } from "@dialectlabs/blinks-core";
 import "@dialectlabs/blinks/index.css";
+
+// Disable the dial.to proxy — we call first-party action URLs directly.
+// Must run before any useAction hook fires.
+setProxyUrl("");
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -24,14 +29,18 @@ export type TelegramAuthResult = {
  */
 export function useTelegramAuth({
   authApiPath = "/api/auth",
+  enabled = true,
 }: {
   authApiPath?: string;
+  /** Set to false to skip auth entirely (e.g. non-Telegram browser context). */
+  enabled?: boolean;
 } = {}): TelegramAuthResult {
   const [status, setStatus] = useState<AuthStatus>("pending");
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     window.Telegram?.WebApp.ready();
 
     async function auth() {
@@ -63,7 +72,7 @@ export function useTelegramAuth({
     }
 
     auth();
-  }, [authApiPath]);
+  }, [authApiPath, enabled]);
 
   return { status, walletAddress, error };
 }

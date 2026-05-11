@@ -81,8 +81,8 @@ bot.command("start", async (ctx) => {
   if (existing) {
     const settings = await getUserSettings(telegramId);
     let balance: number | null = null;
-    balance = await fetchUsdcBalance(existing.walletAddress);
-    await ctx.reply(buildMetricsMessage(balance, existing.walletAddress, settings?.fundingAmountUsd != null), {
+    balance = await fetchUsdcBalance(existing.vaultAddress ?? existing.walletAddress);
+    await ctx.reply(buildMetricsMessage(balance, existing.vaultAddress ?? existing.walletAddress, settings?.fundingAmountUsd != null, existing.walletAddress), {
       parse_mode: "Markdown",
       link_preview_options: { is_disabled: true },
     });
@@ -164,8 +164,8 @@ bot.callbackQuery("action:report", async (ctx) => {
   await ctx.answerCallbackQuery();
   const [walletRecord, settings] = await Promise.all([getWallet(telegramId), getUserSettings(telegramId)]);
   if (walletRecord) {
-    const balance = await fetchUsdcBalance(walletRecord.walletAddress);
-    await ctx.reply(buildMetricsMessage(balance, walletRecord.walletAddress, settings?.fundingAmountUsd != null), {
+    const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress);
+    await ctx.reply(buildMetricsMessage(balance, walletRecord.vaultAddress ?? walletRecord.walletAddress, settings?.fundingAmountUsd != null, walletRecord.walletAddress), {
       parse_mode: "Markdown",
       link_preview_options: { is_disabled: true },
     });
@@ -188,7 +188,7 @@ bot.callbackQuery("action:deposit", async (ctx) => {
   const walletRecord = await getWallet(telegramId);
   if (!walletRecord) { await ctx.reply("Wallet not found."); return; }
   await ctx.reply(
-    `💵 *Deposit address*\n\n\`${walletRecord.walletAddress}\`\n\nSend USDC to this address to fund your savings account.`,
+    `💵 *Deposit address*\n\n\`${walletRecord.vaultAddress ?? walletRecord.walletAddress}\`\n\nSend USDC to this address to fund your savings account.`,
     { parse_mode: "Markdown" },
   );
 });
@@ -377,8 +377,8 @@ async function handleAmountSelected(
 
     const walletRecord = await getWallet(telegramId);
     if (walletRecord) {
-      const balance = await fetchUsdcBalance(walletRecord.walletAddress);
-      await reply(buildMetricsMessage(balance, walletRecord.walletAddress, existing.fundingAmountUsd != null), {
+      const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress);
+      await reply(buildMetricsMessage(balance, walletRecord.vaultAddress ?? walletRecord.walletAddress, existing.fundingAmountUsd != null, walletRecord.walletAddress), {
         parse_mode: "Markdown",
         link_preview_options: { is_disabled: true },
       });
@@ -393,6 +393,8 @@ async function handleAmountSelected(
     // External wallet: send Action links — user signs in their own wallet app.
     const actionUrl = authorizeActionUrl(telegramId, freq, amount);
     const phantomUrl = `https://phantom.app/ul/v1/browse/${encodeURIComponent(actionUrl)}`;
+    console.log("[action-url] external wallet action:", actionUrl);
+    console.log("[action-url] phantom deep-link:      ", phantomUrl);
     const p = PERIOD[freq] ?? freq;
     await reply(
       `Ready to authorize $${amount}/${p} savings.\n\nSign with your wallet to activate:`,
@@ -407,11 +409,12 @@ async function handleAmountSelected(
   }
 
   // Privy wallet first-time — WebView needed to sign the initial Token.approve.
+  const webviewUrl = `${env.NEXT_PUBLIC_MINI_APP_URL}/actions/authorize?freq=${freq}&amount=${amount}`;
+  const privyActionUrl = `${env.NEXT_PUBLIC_MINI_APP_URL}/api/actions/authorize?freq=${freq}&amount=${amount}`;
+  console.log("[action-url] privy webview:   ", webviewUrl);
+  console.log("[action-url] privy action api:", privyActionUrl);
   await reply(buildConfirmMessage(freq, amount), {
-    reply_markup: actionButton(
-      "Complete setup",
-      `${env.NEXT_PUBLIC_MINI_APP_URL}/actions/authorize?freq=${freq}&amount=${amount}`,
-    ),
+    reply_markup: actionButton("Complete setup", webviewUrl),
   });
 }
 

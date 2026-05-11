@@ -8,11 +8,14 @@ import { signAndSendSolanaTransaction } from "@/lib/privy";
 import { buildTokenApproveTransaction } from "@/lib/solana";
 import { persistSettings } from "@/lib/settings";
 import { type SessionData, sessionOptions } from "@/lib/session";
+import { getTelegramIdByWalletAddress } from "@/lib/kv";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
+  "X-Action-Version": "2.1.3",
+  "X-Blockchain-Ids": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
 };
 
 function corsJson(body: unknown, status = 200) {
@@ -60,16 +63,30 @@ export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   const isSessionAuth = !!(session.telegramId && session.privyWalletId);
 
-  // Mode 2: query param + account in body (external wallets, Action link / agent flow)
+  // Mode 2: telegramId query param + account in body (external wallets, Action link / agent flow)
   const telegramIdParam = url.searchParams.get("telegramId");
   const isParamAuth = !!telegramIdParam && !isSessionAuth;
 
-  if (!isSessionAuth && !isParamAuth) {
+  // Mode 3: cold open from a Blinks-aware browser — look up telegramId by wallet address.
+  // telegramId may be null if the wallet has never been linked via the bot; the confirm
+  // route handles that case gracefully (saves settings, skips bot notification).
+  const accountFromBody = body.account ?? "";
+  const isColdOpen = !isSessionAuth && !isParamAuth && !!accountFromBody;
+  const coldTelegramId = isColdOpen
+    ? await getTelegramIdByWalletAddress(accountFromBody)
+    : null;
+
+  if (!isSessionAuth && !isParamAuth && !isColdOpen) {
     return corsJson({ error: "unauthenticated" }, 401);
   }
 
-  const telegramId = isSessionAuth ? session.telegramId! : telegramIdParam!;
-  const walletAddress = isSessionAuth ? session.walletAddress : (body.account ?? "");
+  const telegramId = isSessionAuth
+    ? session.telegramId!
+    : isParamAuth
+      ? telegramIdParam!
+      : coldTelegramId; // null = wallet-only cold open, no bot link yet
+  const walletAddress = isSessionAuth ? session.walletAddress : accountFromBody;
+  const vaultAddress = isSessionAuth ? (session.vaultAddress ?? walletAddress) : walletAddress;
   const privyWalletId = isSessionAuth ? session.privyWalletId : null;
 
   if (!walletAddress) {
@@ -100,28 +117,27 @@ export async function POST(req: NextRequest) {
       return corsJson({ error: "signing_failed" }, 502);
     }
 
-    await persistSettings(telegramId, freq, amt, walletAddress, txSignature);
+    await persistSettings(telegramId!, freq, amt, walletAddress, txSignature);
 
     return corsJson({
       type: "transaction",
       transaction: txBase64,
       message: `Authorized $${amt}/${freqLabel} savings. Tx: ${txSignature}`,
-      moonpayUrl: buildMoonpayUrl(walletAddress, freq, amt),
-      walletAddress,
+      moonpayUrl: buildMoonpayUrl(vaultAddress, freq, amt),
+      walletAddress: vaultAddress,
     });
   }
 
   // External wallet mode: return unsigned tx — client signs + broadcasts.
   // Blockhash validity is ~60s; if client gets blockhash-expired, re-call POST.
+  const confirmParams = new URLSearchParams({ freq, amount: String(amt), wallet: walletAddress });
+  if (telegramId) confirmParams.set("telegramId", telegramId);
   return corsJson({
     type: "transaction",
     transaction: txBase64,
     message: `Authorize autoHODL to save $${amt}/${freqLabel}`,
     links: {
-      next: {
-        type: "post",
-        href: `/api/actions/authorize/confirm?telegramId=${telegramId}&freq=${freq}&amount=${amt}&wallet=${walletAddress}`,
-      },
+      next: { type: "post", href: `/api/actions/authorize/confirm?${confirmParams}` },
     },
   });
 }

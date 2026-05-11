@@ -10,7 +10,7 @@ import {
 import { env } from "@/lib/env";
 import { persistSettings } from "@/lib/settings";
 import { type SessionData, sessionOptions } from "@/lib/session";
-import { getUsdcMint } from "@/lib/solana";
+import { assertFunderSolvent, getUsdcMint } from "@/lib/solana";
 
 export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
@@ -23,6 +23,14 @@ export async function POST(req: NextRequest) {
 
   const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
   const funder = Keypair.fromSecretKey(Buffer.from(env.FUNDER_PRIVATE_KEY, "base64"));
+
+  try {
+    await assertFunderSolvent(connection, funder);
+  } catch (err) {
+    console.error("Funder balance check failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "funder_insufficient_funds" }, { status: 503 });
+  }
+
   const owner = new PublicKey(session.walletAddress);
   const delegate = new PublicKey(env.AUTOHODL_DELEGATE_PUBKEY);
   const mint = new PublicKey(getUsdcMint());

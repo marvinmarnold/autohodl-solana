@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { getUserSettings, getWallet } from "@/lib/kv";
 import { fetchUsdcBalance, buildMetricsMessage } from "@/lib/solana";
+import { getSquadsVaultAddress } from "@/lib/squads";
 import { type SessionData, sessionOptions } from "@/lib/session";
 
 type MessageOptions = {
@@ -43,14 +44,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const balance = walletRecord ? await fetchUsdcBalance(walletRecord.walletAddress) : null;
+  const vaultAddress = walletRecord
+    ? (walletRecord.vaultAddress ?? getSquadsVaultAddress(walletRecord.walletAddress))
+    : null;
+  const balance = vaultAddress ? await fetchUsdcBalance(vaultAddress) : null;
 
   await sendBotMessage(session.telegramId, "✅ Settings updated.");
 
-  if (walletRecord) {
+  if (walletRecord && vaultAddress) {
     await sendBotMessage(
       session.telegramId,
-      buildMetricsMessage(balance, walletRecord.walletAddress, settings.fundingAmountUsd != null),
+      buildMetricsMessage(balance, vaultAddress, settings.fundingAmountUsd != null, walletRecord.walletAddress),
       { parse_mode: "Markdown", link_preview_options: { is_disabled: true } },
     );
   }
