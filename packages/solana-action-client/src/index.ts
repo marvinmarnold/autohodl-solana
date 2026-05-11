@@ -24,6 +24,18 @@ export type ActionPostResponse = {
   };
 };
 
+export type PrepareActionOpts = {
+  actionUrl: string;
+  account: string;
+  params?: Record<string, unknown>;
+};
+
+export type PrepareActionResult = {
+  txBase64: string;
+  confirmUrl: string | null; // resolved absolute URL from links.next.href
+  message: string | null;
+};
+
 export type ProcessActionOpts = {
   /** Full URL to the Solana Action endpoint */
   actionUrl: string;
@@ -45,6 +57,75 @@ export type ProcessActionResult = {
   signature: string;
   nextResult?: unknown;
 };
+
+/**
+ * Fetches and validates a Solana Action, then POSTs to get an unsigned transaction.
+ * Returns the base64 tx, the resolved confirm URL (from links.next), and the message.
+ * Does NOT sign — caller is responsible for signing and broadcasting.
+ */
+export async function prepareAction(opts: PrepareActionOpts): Promise<PrepareActionResult> {
+  const { actionUrl, account, params = {} } = opts;
+
+  // Step 1: validate it's a real Action
+  const getRes = await fetch(actionUrl, { headers: { Accept: "application/json" } });
+  if (!getRes.ok) {
+    throw new Error(`Action GET failed: ${getRes.status} ${actionUrl}`);
+  }
+  const actionMeta = (await getRes.json()) as ActionGetResponse;
+  if (!actionMeta.label && !actionMeta.title) {
+    throw new Error(
+      `Response from ${actionUrl} does not appear to be a Solana Action (missing label/title)`,
+    );
+  }
+
+  // Step 2: POST to get the unsigned transaction
+  const postRes = await fetch(actionUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ account, ...params }),
+  });
+  if (!postRes.ok) {
+    const body = await postRes.text().catch(() => "(unreadable)");
+    throw new Error(`Action POST failed: ${postRes.status} — ${body}`);
+  }
+  const postData = (await postRes.json()) as ActionPostResponse;
+  if (!postData.transaction) {
+    throw new Error("Action POST response missing transaction field");
+  }
+
+  // Step 3: resolve links.next.href to an absolute URL
+  const nextHref = postData.links?.next?.href ?? null;
+  let confirmUrl: string | null = null;
+  if (nextHref) {
+    confirmUrl = nextHref.startsWith("http")
+      ? nextHref
+      : new URL(nextHref, actionUrl).toString();
+  }
+
+  return {
+    txBase64: postData.transaction,
+    confirmUrl,
+    message: postData.message ?? null,
+  };
+}
+
+/**
+ * Posts a transaction signature to the confirm URL (links.next chain-call).
+ * Returns the parsed JSON response from the server.
+ * Throws on non-2xx responses.
+ */
+export async function confirmAction(confirmUrl: string, signature: string): Promise<unknown> {
+  const res = await fetch(confirmUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signature }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    throw new Error(`Confirm POST failed: ${res.status} — ${body}`);
+  }
+  return res.json();
+}
 
 /**
  * Process any Solana Action endpoint:
