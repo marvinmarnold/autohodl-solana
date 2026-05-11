@@ -1,10 +1,4 @@
-import { processAction } from "@autohodl/solana-action-client";
-
-// MoonPay CLI exposes a signing capability that agents can call.
-// This is the interface we expect the host to inject.
-export type MoonPaySigner = {
-  signAndBroadcast: (txBase64: string, rpcUrl?: string) => Promise<string>;
-};
+import { prepareAction, confirmAction } from "@autohodl/solana-action-client";
 
 type LookupResult = {
   telegramId: string;
@@ -35,20 +29,25 @@ export async function autohodlStatus(
   return autohodlLookup(walletAddress, apiUrl);
 }
 
-export type ProcessSolanaActionOpts = {
+export type PrepareToolInput = {
   actionUrl: string;
   account: string;
   params?: Record<string, unknown>;
-  rpcUrl?: string;
-  signer: MoonPaySigner;
 };
 
-export async function processSolanaAction(opts: ProcessSolanaActionOpts) {
-  return processAction({
-    actionUrl: opts.actionUrl,
-    account: opts.account,
-    params: opts.params,
-    rpcUrl: opts.rpcUrl,
-    sign: (txBase64) => opts.signer.signAndBroadcast(txBase64, opts.rpcUrl),
+export async function prepareActionTool(input: PrepareToolInput) {
+  return prepareAction({
+    actionUrl: input.actionUrl,
+    account: input.account,
+    params: input.params,
   });
+}
+
+export type ConfirmToolInput = {
+  confirmUrl: string;
+  signature: string;
+};
+
+export async function confirmActionTool(input: ConfirmToolInput) {
+  return confirmAction(input.confirmUrl, input.signature);
 }

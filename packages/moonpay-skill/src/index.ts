@@ -2,14 +2,14 @@
 /**
  * @autohodl/moonpay-skill — MCP server
  *
- * Exposes three tools:
- *   autohodl_lookup        — check if a wallet has autoHODL configured
- *   autohodl_status        — same as lookup (alias for LLM discoverability)
- *   process_solana_action  — sign + broadcast any Solana Action (public good)
+ * Exposes four tools:
+ *   autohodl_lookup       — check if a wallet has autoHODL savings configured
+ *   autohodl_status       — alias for lookup (LLM discoverability)
+ *   solana_action_prepare — GET + POST a Solana Action, return unsigned tx + confirm URL
+ *   solana_action_confirm — POST signature to confirm URL (links.next chain-call)
  *
- * The signing capability is injected by the MoonPay CLI host via the
- * MOONPAY_SIGNER_URL env var, which points to a local signing service
- * the CLI spins up alongside this MCP server.
+ * Signing is delegated to MoonPay's `mp mcp` server running alongside this one.
+ * This skill has no signing capability and requires no signing-related env vars.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -18,29 +18,14 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { autohodlLookup, autohodlStatus, processSolanaAction } from "./tools.js";
+import {
+  autohodlLookup,
+  autohodlStatus,
+  prepareActionTool,
+  confirmActionTool,
+} from "./tools.js";
 
 const AUTOHODL_API_URL = process.env["AUTOHODL_API_URL"] ?? "https://autohodl.vercel.app";
-const MOONPAY_SIGNER_URL = process.env["MOONPAY_SIGNER_URL"] ?? "";
-const DEFAULT_RPC = process.env["SOLANA_RPC_URL"] ?? "https://api.mainnet-beta.solana.com";
-
-// Minimal signer that calls the MoonPay CLI's local signing service
-const moonpaySigner = {
-  async signAndBroadcast(txBase64: string, rpcUrl?: string): Promise<string> {
-    if (!MOONPAY_SIGNER_URL) throw new Error("MOONPAY_SIGNER_URL not set — MoonPay CLI signing unavailable");
-    const res = await fetch(`${MOONPAY_SIGNER_URL}/sign`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transaction: txBase64, rpcUrl: rpcUrl ?? DEFAULT_RPC }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "(unreadable)");
-      throw new Error(`MoonPay signer failed: ${res.status} — ${body}`);
-    }
-    const data = (await res.json()) as { signature: string };
-    return data.signature;
-  },
-};
 
 const server = new Server(
   { name: "autohodl-skill", version: "0.1.0" },
@@ -51,19 +36,24 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
   tools: [
     {
       name: "autohodl_lookup",
-      description: "Check if a Solana wallet address has autoHODL savings configured. Returns current settings and USDC balance, or null if not registered. If null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
+      description:
+        "Check if a Solana wallet address has autoHODL savings configured. Returns current settings and USDC balance, or null if not registered. If null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
       inputSchema: {
         type: "object",
         properties: {
           walletAddress: { type: "string", description: "Base58 Solana wallet address" },
-          apiUrl: { type: "string", description: "autoHODL API base URL (optional, defaults to production)" },
+          apiUrl: {
+            type: "string",
+            description: "autoHODL API base URL (optional, defaults to production)",
+          },
         },
         required: ["walletAddress"],
       },
     },
     {
       name: "autohodl_status",
-      description: "Get current autoHODL savings status for a wallet — savings schedule, balance, and funding config.",
+      description:
+        "Get current autoHODL savings status for a wallet — savings schedule, balance, and funding config.",
       inputSchema: {
         type: "object",
         properties: {
@@ -74,8 +64,9 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
       },
     },
     {
-      name: "process_solana_action",
-      description: "Sign and broadcast any Solana Action. Fetches the Action, gets the unsigned transaction, signs with MoonPay CLI, broadcasts, and follows links.next chaining. Works with any standard Solana Actions endpoint.",
+      name: "solana_action_prepare",
+      description:
+        "Fetch a Solana Action endpoint and get an unsigned transaction. Returns the base64-encoded transaction, the confirm URL (to call after signing), and the action message. Pass the txBase64 to MoonPay's transaction_sign tool, then transaction_send, then call solana_action_confirm.",
       inputSchema: {
         type: "object",
         properties: {
@@ -83,12 +74,31 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
           account: { type: "string", description: "Signer's base58 public key" },
           params: {
             type: "object",
-            description: "Additional parameters merged into the POST body (e.g. { telegramId, freq, amount })",
+            description:
+              "Additional parameters merged into the POST body (e.g. { freq: 'weekly', amount: 20 })",
             additionalProperties: true,
           },
-          rpcUrl: { type: "string", description: "Solana RPC URL (optional, defaults to mainnet-beta)" },
         },
         required: ["actionUrl", "account"],
+      },
+    },
+    {
+      name: "solana_action_confirm",
+      description:
+        "Complete a Solana Action by posting the transaction signature to the confirm URL returned by solana_action_prepare. Returns the server confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          confirmUrl: {
+            type: "string",
+            description: "The confirmUrl returned by solana_action_prepare",
+          },
+          signature: {
+            type: "string",
+            description: "The base58 transaction signature returned by MoonPay's transaction_send",
+          },
+        },
+        required: ["confirmUrl", "signature"],
       },
     },
   ],
@@ -110,20 +120,19 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
 
-    if (name === "process_solana_action") {
-      const { actionUrl, account, params, rpcUrl } = args as {
+    if (name === "solana_action_prepare") {
+      const { actionUrl, account, params } = args as {
         actionUrl: string;
         account: string;
         params?: Record<string, unknown>;
-        rpcUrl?: string;
       };
-      const result = await processSolanaAction({
-        actionUrl,
-        account,
-        params,
-        rpcUrl,
-        signer: moonpaySigner,
-      });
+      const result = await prepareActionTool({ actionUrl, account, params });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+
+    if (name === "solana_action_confirm") {
+      const { confirmUrl, signature } = args as { confirmUrl: string; signature: string };
+      const result = await confirmActionTool({ confirmUrl, signature });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
 
