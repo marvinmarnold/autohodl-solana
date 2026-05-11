@@ -1,6 +1,48 @@
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { createApproveInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { env } from "./env";
+
+export async function fetchUsdcBalance(walletAddress: string): Promise<number | null> {
+  try {
+    const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
+    const mint  = new PublicKey(getUsdcMint());
+    const owner = new PublicKey(walletAddress);
+    const ata   = getAssociatedTokenAddressSync(mint, owner);
+    const bal   = await connection.getTokenAccountBalance(ata);
+    return bal.value.uiAmount ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+function shortAddress(address: string): string {
+  return `${address.slice(0, 4)}..${address.slice(-4)}`;
+}
+
+export function buildMetricsMessage(
+  usdcBalance: number | null,
+  vaultAddress: string,
+  hasFunding: boolean,
+  ownerAddress?: string,
+): string {
+  const cluster = env.SOLANA_NETWORK === "devnet" ? "?cluster=devnet" : "";
+  const vaultUrl = `https://solscan.io/account/${vaultAddress}${cluster}`;
+  const balanceLine = usdcBalance !== null
+    ? `💰 Saved: $${usdcBalance.toFixed(2)} USDC`
+    : "💰 Saved: —";
+  const lines = [
+    "📊 *Your savings*\n",
+    balanceLine,
+    "📈 Yield: ~5% APY via Reflect",
+    hasFunding ? "✅ Automatic funding via MoonPay" : "❌ Automatic funding via MoonPay",
+    `🏦 Vault: [${shortAddress(vaultAddress)}](${vaultUrl})`,
+  ];
+  if (ownerAddress) {
+    const ownerUrl = `https://solscan.io/account/${ownerAddress}${cluster}`;
+    lines.push(`👛 Owner: [${shortAddress(ownerAddress)}](${ownerUrl})`);
+  }
+  return lines.join("\n");
+}
 
 const USDC_MINT_BY_NETWORK: Record<"mainnet" | "devnet", string> = {
   mainnet: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -9,6 +51,53 @@ const USDC_MINT_BY_NETWORK: Record<"mainnet" | "devnet", string> = {
 
 export function getUsdcMint(): string {
   return USDC_MINT_BY_NETWORK[env.SOLANA_NETWORK];
+}
+
+// Lamports required to create an ATA (rent-exempt minimum for a token account).
+const ATA_RENT_LAMPORTS = BigInt(2_039_280);
+// Keep at least 3× ATA cost as a headroom buffer to cover fees + multiple ops.
+const SOL_WARN_THRESHOLD = ATA_RENT_LAMPORTS * BigInt(3);
+
+/**
+ * Asserts the funder has enough SOL and (optionally) enough USDC.
+ * Throws with a clear actionable message if either balance is too low,
+ * so the error surfaces immediately in logs instead of as a cryptic
+ * on-chain "insufficient lamports" failure.
+ */
+export async function assertFunderSolvent(
+  connection: Connection,
+  funder: Keypair,
+  requiredUsdcRaw?: bigint,
+): Promise<void> {
+  const pubkey = funder.publicKey;
+  const label = `[FUNDER ${pubkey.toBase58()}]`;
+
+  const solBalance = BigInt(await connection.getBalance(pubkey));
+  if (solBalance < SOL_WARN_THRESHOLD) {
+    throw new Error(
+      `${label} LOW SOL: ${solBalance} lamports available, need ≥${SOL_WARN_THRESHOLD} (${Number(SOL_WARN_THRESHOLD) / 1e9} SOL). ` +
+      `Top up at https://faucet.solana.com or run: solana airdrop 1 ${pubkey.toBase58()} --url devnet`,
+    );
+  }
+
+  if (requiredUsdcRaw !== undefined) {
+    const mint = new PublicKey(getUsdcMint());
+    const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+    const accounts = await connection.getParsedTokenAccountsByOwner(pubkey, { programId: TOKEN_PROGRAM_ID });
+    const mintStr = mint.toBase58();
+    const ata = accounts.value.find(
+      (a) => (a.account.data as { parsed: { info: { mint: string } } }).parsed.info.mint === mintStr,
+    );
+    const usdcBalance = ata
+      ? BigInt((ata.account.data as { parsed: { info: { tokenAmount: { amount: string } } } }).parsed.info.tokenAmount.amount)
+      : BigInt(0);
+    if (usdcBalance < requiredUsdcRaw) {
+      throw new Error(
+        `${label} LOW USDC: ${usdcBalance} raw units available, need ${requiredUsdcRaw} (${Number(requiredUsdcRaw) / 1e6} USDC). ` +
+        `Fund the funder's USDC token account on ${env.SOLANA_NETWORK}.`,
+      );
+    }
+  }
 }
 
 // Builds an unsigned SPL Token.approve transaction granting `delegate`

@@ -1,6 +1,7 @@
 import { Connection, Transaction } from "@solana/web3.js";
 import { env } from "./env";
 import { getWallet, setWallet } from "./kv";
+import { getSquadsVaultAddress } from "./squads";
 
 export class WalletPregenerationError extends Error {
   constructor(
@@ -117,8 +118,14 @@ export async function pregenerateWallet(telegramId: string): Promise<{
   // KV is the source of truth for wallet idempotency — Privy's free tier
   // doesn't support custom_metadata writes, so we store the mapping here.
   const stored = await getWallet(telegramId);
-  if (stored) {
+  if (stored?.walletType === "privy" && stored.privyUserId && stored.walletId) {
     console.log("Wallet found in KV for telegram:", telegramId);
+    // Backfill vaultAddress for records written before this field was added.
+    if (!stored.vaultAddress) {
+      const vaultAddress = getSquadsVaultAddress(stored.walletAddress);
+      await setWallet(telegramId, { ...stored, vaultAddress });
+      console.log("Backfilled vaultAddress for telegram:", telegramId, "->", vaultAddress);
+    }
     return {
       privyUserId: stored.privyUserId,
       walletAddress: stored.walletAddress,
@@ -129,7 +136,8 @@ export async function pregenerateWallet(telegramId: string): Promise<{
   const privyUserId = await getOrCreatePrivyUser(telegramId);
   const { address, walletId } = await createServerWallet();
 
-  await setWallet(telegramId, { walletId, walletAddress: address, privyUserId });
+  const vaultAddress = getSquadsVaultAddress(address);
+  await setWallet(telegramId, { walletType: "privy", walletId, walletAddress: address, privyUserId, vaultAddress });
 
   return { privyUserId, walletAddress: address, privyWalletId: walletId };
 }

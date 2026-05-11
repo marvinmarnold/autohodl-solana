@@ -3,8 +3,11 @@ import type { SessionOptions } from "iron-session";
 export type SessionData = {
   telegramId: string;
   privyUserId: string;
+  /** Privy embedded wallet — used server-side for signing only. Never sent to the client. */
   walletAddress: string;
   privyWalletId: string;
+  /** Squads v4 vault PDA — the user-facing address for display and deposits. */
+  vaultAddress: string;
 };
 
 // sameSite: "none" is required for Telegram WebView (cross-site iframe context).

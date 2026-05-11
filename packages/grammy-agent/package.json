@@ -1,7 +1,7 @@
 {
   "name": "@autohodl/grammy-agent",
-  "version": "0.0.0",
-  "description": "grammY middleware that routes configurable messages through an LLM with tool calling, including first-class support for Blink-output tools. Built in M3.",
+  "version": "0.1.0",
+  "description": "grammY middleware that routes messages through an LLM with tool calling. First-class support for emitting Solana Action (Blink) buttons as tool outputs.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,13 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "ai": ">=4.0.0",
+    "grammy": ">=1.0.0"
+  },
   "devDependencies": {
+    "ai": "^4.3.16",
+    "grammy": "^1.36.3",
     "typescript": "*"
   }
 }

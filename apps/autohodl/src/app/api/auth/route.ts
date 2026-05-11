@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { WalletPregenerationError, pregenerateWallet } from "@/lib/privy";
 import { type SessionData, sessionOptions } from "@/lib/session";
+import { getSquadsVaultAddress } from "@/lib/squads";
 import { InvalidInitDataError, validateInitData } from "@/lib/telegram";
 
 export async function POST(req: NextRequest) {
@@ -56,13 +57,17 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
+  const vaultAddress = getSquadsVaultAddress(walletAddress);
+
   // Set session cookie
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   session.telegramId = telegramId;
   session.privyUserId = privyUserId;
   session.walletAddress = walletAddress;
   session.privyWalletId = privyWalletId;
+  session.vaultAddress = vaultAddress;
   await session.save();
 
-  return NextResponse.json({ walletAddress });
+  // Return the vault address — the Privy address stays server-side only.
+  return NextResponse.json({ walletAddress: vaultAddress });
 }

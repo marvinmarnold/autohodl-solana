@@ -17,11 +17,16 @@
     "typescript": "*"
   },
   "dependencies": {
+    "@autohodl/blinks-telegram": "workspace:*",
+    "@autohodl/grammy-agent": "workspace:*",
+    "@autohodl/solana-action-client": "workspace:*",
+    "@dialectlabs/blinks": "^0.22.5",
     "@solana/actions": "^1.6.6",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
-    "ioredis": "^5.6.1",
+    "@sqds/multisig": "^2.1.4",
     "grammy": "^1.42.0",
+    "ioredis": "^5.6.1",
     "iron-session": "^8.0.4",
     "next": "^16.2.4",
     "react": "^19.2.5",

@@ -1,7 +1,7 @@
 {
   "name": "@autohodl/blinks-telegram",
-  "version": "0.0.0",
-  "description": "Render Solana Actions/Blinks inside Telegram Mini Apps. Bridges Dialect's BlinkComponent with Privy signing and Telegram theme params.",
+  "version": "0.1.0",
+  "description": "Render Solana Actions/Blinks inside Telegram. The Telegram-native equivalent of @dialectlabs/blinks — web_app buttons, thin signing WebView, and bot confirmation middleware for any grammY bot.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    },
+    "./bot": {
+      "import": "./dist/bot.js",
+      "types": "./dist/bot.d.ts"
+    },
+    "./webview": {
+      "import": "./dist/webview.js",
+      "types": "./dist/webview.d.ts"
     }
   },
   "files": ["dist"],
@@ -16,7 +28,20 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "@dialectlabs/blinks": ">=0.20.0",
+    "grammy": ">=1.0.0",
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@dialectlabs/blinks": { "optional": true },
+    "react": { "optional": true }
+  },
   "devDependencies": {
+    "@dialectlabs/blinks": "^0.22.5",
+    "@types/react": "^18.0.0",
+    "grammy": "^1.36.3",
+    "react": "^18.0.0",
     "typescript": "*"
   }
 }

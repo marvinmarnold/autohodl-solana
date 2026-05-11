@@ -3,6 +3,10 @@
     {
       "pathPattern": "/api/actions/**",
       "apiPath": "/api/actions/**"
+    },
+    {
+      "pathPattern": "/actions/authorize",
+      "apiPath": "/api/actions/authorize"
     }
   ]
 }

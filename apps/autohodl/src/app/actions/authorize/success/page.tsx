@@ -61,13 +61,9 @@ export default function SuccessPage() {
     }
   }, []);
 
-  async function closeAndNotify() {
-    try {
-      await fetch("/api/actions/authorize/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {/* non-fatal */}
+  function closeAndNotify() {
+    // Fire notify without blocking — bot message arrives shortly after WebView closes.
+    fetch("/api/actions/authorize/notify", { method: "POST" }).catch(() => {});
     window.Telegram?.WebApp.close();
   }
 
@@ -145,6 +141,14 @@ export default function SuccessPage() {
         <Row label="Funding via" value="MoonPay" valueColor="#34C759" />
         <Row label="Wallet via"  value="Privy"   valueColor="#34C759" />
       </div>
+
+      {/* ── Loading: airdrop + MoonPay state pending ─── */}
+      {phase === "cta" && isLoading && (
+        <div style={{ textAlign: "center", padding: "1rem 0" }}>
+          <p style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>⏳</p>
+          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>Setting up your account…</p>
+        </div>
+      )}
 
       {/* ── Phase: cta ───────────────────────────────── */}
       {phase === "cta" && !isLoading && (
