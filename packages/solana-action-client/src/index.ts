@@ -1,5 +1,3 @@
-import { Connection, Transaction } from "@solana/web3.js";
-
 const SOLANA_MAINNET_RPC = "https://api.mainnet-beta.solana.com";
 
 export type ActionGetResponse = {
@@ -59,6 +57,7 @@ export type ProcessActionResult = {
 };
 
 /**
+ * Steps 1-2 mirror processAction's fetch logic; extract a shared helper if a third consumer appears.
  * Fetches and validates a Solana Action, then POSTs to get an unsigned transaction.
  * Returns the base64 tx, the resolved confirm URL (from links.next), and the message.
  * Does NOT sign — caller is responsible for signing and broadcasting.
@@ -82,7 +81,7 @@ export async function prepareAction(opts: PrepareActionOpts): Promise<PrepareAct
   const postRes = await fetch(actionUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ account, ...params }),
+    body: JSON.stringify({ ...params, account }),
   });
   if (!postRes.ok) {
     const body = await postRes.text().catch(() => "(unreadable)");
@@ -155,7 +154,7 @@ export async function processAction(opts: ProcessActionOpts): Promise<ProcessAct
   const postRes = await fetch(actionUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ account, ...params }),
+    body: JSON.stringify({ ...params, account }),
   });
   if (!postRes.ok) {
     const body = await postRes.text().catch(() => "(unreadable)");
@@ -185,8 +184,6 @@ export async function processAction(opts: ProcessActionOpts): Promise<ProcessAct
       console.warn(`links.next POST failed: ${confirmRes.status} ${confirmUrl}`);
     }
   }
-
-  void new Connection(rpcUrl); // keep rpcUrl in scope for future use (e.g. confirmation polling)
 
   return { signature, nextResult };
 }
