@@ -82,7 +82,7 @@ bot.command("start", async (ctx) => {
   if (existing) {
     const settings = await getUserSettings(telegramId);
     let balance: number | null = null;
-    balance = await fetchUsdcBalance(existing.vaultAddress ?? existing.walletAddress);
+    balance = await fetchUsdcBalance(existing.vaultAddress ?? existing.walletAddress, existing.vaultAddress ? existing.walletAddress : undefined);
     await ctx.reply(buildMetricsMessage(balance, existing.vaultAddress ?? existing.walletAddress, settings?.fundingAmountUsd != null, existing.walletAddress), {
       parse_mode: "Markdown",
       link_preview_options: { is_disabled: true },
@@ -165,7 +165,7 @@ bot.callbackQuery("action:report", async (ctx) => {
   await ctx.answerCallbackQuery();
   const [walletRecord, settings] = await Promise.all([getWallet(telegramId), getUserSettings(telegramId)]);
   if (walletRecord) {
-    const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress);
+    const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress, walletRecord.vaultAddress ? walletRecord.walletAddress : undefined);
     await ctx.reply(buildMetricsMessage(balance, walletRecord.vaultAddress ?? walletRecord.walletAddress, settings?.fundingAmountUsd != null, walletRecord.walletAddress), {
       parse_mode: "Markdown",
       link_preview_options: { is_disabled: true },
@@ -368,14 +368,14 @@ async function handleAmountSelected(
 ) {
   // First-time users must pick the minimum to qualify for the demo faucet.
   const minAmount = MIN_SAVINGS_AMOUNTS[freq as keyof typeof MIN_SAVINGS_AMOUNTS];
-  if (!existing && minAmount !== undefined && amount !== minAmount) {
+  if (minAmount !== undefined && amount !== minAmount) {
     const p = PERIOD[freq] ?? freq;
     const presets = FREQ_PRESETS[freq] ?? [];
     const kb = new InlineKeyboard();
     for (const amt of presets) kb.text(`$${amt}`, `amount:${freq}:${amt}`);
     kb.row().text("Custom amount", `custom:${freq}`);
     await reply(
-      `To receive a demo USDC top-up, please select $${minAmount}/${p}. You can change your savings amount any time after setup.`,
+      `In test mode only $${minAmount}/${p} is accepted. Please select the lowest option.`,
       { reply_markup: kb },
     );
     return;
@@ -393,7 +393,7 @@ async function handleAmountSelected(
 
     const walletRecord = await getWallet(telegramId);
     if (walletRecord) {
-      const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress);
+      const balance = await fetchUsdcBalance(walletRecord.vaultAddress ?? walletRecord.walletAddress, walletRecord.vaultAddress ? walletRecord.walletAddress : undefined);
       await reply(buildMetricsMessage(balance, walletRecord.vaultAddress ?? walletRecord.walletAddress, existing.fundingAmountUsd != null, walletRecord.walletAddress), {
         parse_mode: "Markdown",
         link_preview_options: { is_disabled: true },
