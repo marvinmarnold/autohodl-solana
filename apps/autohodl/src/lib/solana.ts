@@ -2,14 +2,32 @@ import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { createApproveInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { env } from "./env";
 
+const JUPITER_USDC_MAINNET = "9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D";
+
+export function getJupiterUsdcMint(): string {
+  return process.env.JUPITER_USDC ?? JUPITER_USDC_MAINNET;
+}
+
 export async function fetchUsdcBalance(walletAddress: string): Promise<number | null> {
   try {
     const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
-    const mint  = new PublicKey(getUsdcMint());
     const owner = new PublicKey(walletAddress);
-    const ata   = getAssociatedTokenAddressSync(mint, owner);
-    const bal   = await connection.getTokenAccountBalance(ata);
-    return bal.value.uiAmount ?? 0;
+
+    async function ataBalance(mintStr: string): Promise<number> {
+      try {
+        const ata = getAssociatedTokenAddressSync(new PublicKey(mintStr), owner);
+        const bal = await connection.getTokenAccountBalance(ata);
+        return bal.value.uiAmount ?? 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    const [usdc, jupiterUsdc] = await Promise.all([
+      ataBalance(getUsdcMint()),
+      ataBalance(getJupiterUsdcMint()),
+    ]);
+    return usdc + jupiterUsdc;
   } catch {
     return null;
   }

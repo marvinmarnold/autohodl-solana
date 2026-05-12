@@ -16,15 +16,16 @@ import {
   settingsInSync,
 } from "@/lib/kv";
 import { buildWithdrawTransaction, fetchUsdcBalance, buildMetricsMessage, getUsdcMint } from "@/lib/solana";
+import { MIN_SAVINGS_AMOUNTS } from "@/lib/config";
 
 const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
 const PERIOD: Record<string, string> = { daily: "day", weekly: "week", monthly: "month" };
 
 const FREQ_PRESETS: Record<string, number[]> = {
-  daily:   [Number(process.env.MIN_DAILY_AMOUNT_USD ?? 1), 5, 10, 20],
-  weekly:  [5, 20, 50, 250],
-  monthly: [10, 50, 100, 500],
+  daily:   [MIN_SAVINGS_AMOUNTS.daily,   5,  10,  20],
+  weekly:  [MIN_SAVINGS_AMOUNTS.weekly,  20, 50,  250],
+  monthly: [MIN_SAVINGS_AMOUNTS.monthly, 50, 100, 500],
 };
 
 // Pending state types stored in Redis
@@ -365,6 +366,21 @@ async function handleAmountSelected(
   existing: Awaited<ReturnType<typeof getUserSettings>>,
   walletType: "privy" | "external" | undefined,
 ) {
+  // First-time users must pick the minimum to qualify for the demo faucet.
+  const minAmount = MIN_SAVINGS_AMOUNTS[freq as keyof typeof MIN_SAVINGS_AMOUNTS];
+  if (!existing && minAmount !== undefined && amount !== minAmount) {
+    const p = PERIOD[freq] ?? freq;
+    const presets = FREQ_PRESETS[freq] ?? [];
+    const kb = new InlineKeyboard();
+    for (const amt of presets) kb.text(`$${amt}`, `amount:${freq}:${amt}`);
+    kb.row().text("Custom amount", `custom:${freq}`);
+    await reply(
+      `To receive a demo USDC top-up, please select $${minAmount}/${p}. You can change your savings amount any time after setup.`,
+      { reply_markup: kb },
+    );
+    return;
+  }
+
   if (existing) {
     // Delegation already signed — update KV directly, no re-signing needed.
     await setUserSettings(telegramId, {

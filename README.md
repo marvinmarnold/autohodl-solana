@@ -3,6 +3,8 @@
 > Scheduled USDC savings on Solana — signed once, runs forever.
 > Built for the [Colosseum Frontier Hackathon](https://colosseum.com/frontier).
 
+![autoHODL system architecture](docs/architecture.png)
+
 ---
 
 ## What we built
