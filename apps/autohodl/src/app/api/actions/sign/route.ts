@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import { persistSettings } from "@/lib/settings";
 import { type SessionData, sessionOptions } from "@/lib/session";
 import { assertFunderSolvent, getUsdcMint } from "@/lib/solana";
+import { notifyBotAuthorizationComplete } from "@/lib/bot-notify";
 
 export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
   }
 
   await persistSettings(session.telegramId, freq, amount, session.walletAddress, signature);
+  await notifyBotAuthorizationComplete(session.telegramId);
 
   return NextResponse.json({ signature, walletAddress: session.walletAddress });
 }

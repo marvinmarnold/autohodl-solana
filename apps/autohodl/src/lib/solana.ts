@@ -2,14 +2,57 @@ import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { createApproveInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { env } from "./env";
 
-export async function fetchUsdcBalance(walletAddress: string): Promise<number | null> {
+const JUPITER_USDC_MAINNET = "9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D";
+
+export function getJupiterUsdcMint(): string {
+  return process.env.JUPITER_USDC ?? JUPITER_USDC_MAINNET;
+}
+
+// ownerAddress is the wallet that owns the vault — checked as a second location
+// for Jupiter USDC since yield tokens may land there rather than in the vault.
+export async function fetchUsdcBalance(vaultOrWallet: string, ownerAddress?: string): Promise<number | null> {
   try {
     const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
-    const mint  = new PublicKey(getUsdcMint());
-    const owner = new PublicKey(walletAddress);
-    const ata   = getAssociatedTokenAddressSync(mint, owner);
-    const bal   = await connection.getTokenAccountBalance(ata);
-    return bal.value.uiAmount ?? 0;
+
+    async function usdcAta(address: string): Promise<number> {
+      try {
+        const owner = new PublicKey(address);
+        // allowOwnerOffCurve=true so Squads vault PDAs are handled correctly.
+        const ata = getAssociatedTokenAddressSync(new PublicKey(getUsdcMint()), owner, true);
+        const bal = await connection.getTokenAccountBalance(ata);
+        return bal.value.uiAmount ?? 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    // getParsedTokenAccountsByOwner handles off-curve owners and non-ATA accounts,
+    // making it more robust than ATA derivation for yield tokens.
+    async function jupiterUsdc(address: string): Promise<number> {
+      try {
+        const pub = new PublicKey(address);
+        const mint = new PublicKey(getJupiterUsdcMint());
+        const accounts = await connection.getParsedTokenAccountsByOwner(pub, { mint });
+        return accounts.value.reduce((sum, a) => {
+          // .parsed is typed `any` in @solana/web3.js — no typed alternative available.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const uiAmount = (a.account.data as any).parsed.info.tokenAmount.uiAmount as number | null;
+          return sum + (uiAmount ?? 0);
+        }, 0);
+      } catch {
+        return 0;
+      }
+    }
+
+    const addresses = ownerAddress && ownerAddress !== vaultOrWallet
+      ? [vaultOrWallet, ownerAddress]
+      : [vaultOrWallet];
+
+    const [usdc, ...jupBalances] = await Promise.all([
+      usdcAta(vaultOrWallet),
+      ...addresses.map(jupiterUsdc),
+    ]);
+    return usdc + jupBalances.reduce((s, b) => s + b, 0);
   } catch {
     return null;
   }

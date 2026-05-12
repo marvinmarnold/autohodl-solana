@@ -14,6 +14,7 @@ import {
 } from "@solana/spl-token";
 import { env } from "@/lib/env";
 import { redis, getUserSettings } from "@/lib/kv";
+import { MIN_SAVINGS_AMOUNTS } from "@/lib/config";
 import { assertFunderSolvent, getUsdcMint } from "@/lib/solana";
 import { type SessionData, sessionOptions } from "@/lib/session";
 import { getSquadsVaultAddress } from "@/lib/squads";
@@ -30,6 +31,13 @@ export async function POST(req: NextRequest) {
   const confirmedSettings = await getUserSettings(session.telegramId);
   const moonpayConfigured = confirmedSettings !== null;
 
+  // Only airdrop when the user chose the minimum savings amount for their period,
+  // so the faucet isn't drained by users with large savings targets.
+  const isMinAmount =
+    confirmedSettings !== null &&
+    confirmedSettings.savingsAmountUsd ===
+      MIN_SAVINGS_AMOUNTS[confirmedSettings.savingsFrequency as keyof typeof MIN_SAVINGS_AMOUNTS];
+
   // Use the user's savings amount so the faucet covers exactly one savings period.
   const airdropAmount = confirmedSettings?.savingsAmountUsd
     ? BigInt(Math.round(confirmedSettings.savingsAmountUsd * 1_000_000))
@@ -41,7 +49,7 @@ export async function POST(req: NextRequest) {
   let airdropStatus: "skipped" | "sent" | "failed" = "skipped";
   let airdropError: string | null = null;
 
-  if (!alreadyAirdropped) {
+  if (!alreadyAirdropped && isMinAmount) {
     try {
       const connection = new Connection(env.NEXT_PUBLIC_SOLANA_RPC_URL, "confirmed");
       const funder = Keypair.fromSecretKey(Buffer.from(env.FUNDER_PRIVATE_KEY, "base64"));

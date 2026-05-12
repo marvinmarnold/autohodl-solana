@@ -9,6 +9,7 @@ import { buildTokenApproveTransaction } from "@/lib/solana";
 import { persistSettings } from "@/lib/settings";
 import { type SessionData, sessionOptions } from "@/lib/session";
 import { getTelegramIdByWalletAddress } from "@/lib/kv";
+import { notifyBotAuthorizationComplete } from "@/lib/bot-notify";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   const response: ActionGetResponse = {
     title: "Authorize autoHODL savings",
-    icon: `${env.NEXT_PUBLIC_MINI_APP_URL}/icon.svg`,
+    icon: `${env.NEXT_PUBLIC_MINI_APP_URL}/autohodl-solana.jpg`,
     description: `Allow autoHODL to save $${amt} per ${freqLabel} with the highest earning yield provider.`,
     label: "Authorize",
     links: {
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
     }
 
     await persistSettings(telegramId!, freq, amt, walletAddress, txSignature);
+    await notifyBotAuthorizationComplete(telegramId!);
 
     return corsJson({
       type: "transaction",

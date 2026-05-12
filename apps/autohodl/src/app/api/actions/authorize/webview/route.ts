@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const response: ActionGetResponse = {
     title: "Authorize autoHODL savings",
-    icon: `${env.NEXT_PUBLIC_MINI_APP_URL}/icon.svg`,
+    icon: `${env.NEXT_PUBLIC_MINI_APP_URL}/autohodl-solana.jpg`,
     description: `Allow autoHODL to save $${amt} per ${freqLabel} with the highest earning yield provider.`,
     label: "Authorize",
     links: {
