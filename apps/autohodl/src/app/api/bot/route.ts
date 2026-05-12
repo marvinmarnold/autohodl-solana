@@ -22,7 +22,7 @@ const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 const PERIOD: Record<string, string> = { daily: "day", weekly: "week", monthly: "month" };
 
 const FREQ_PRESETS: Record<string, number[]> = {
-  daily:   [1, 5, 10, 20],
+  daily:   [Number(process.env.MIN_DAILY_AMOUNT_USD ?? 1), 5, 10, 20],
   weekly:  [5, 20, 50, 250],
   monthly: [10, 50, 100, 500],
 };
@@ -121,11 +121,11 @@ bot.command("start", async (ctx) => {
 
   // First-time user — ask create or BYO
   await ctx.reply(
-    "👋 Welcome to autoHODL!\n\nSave a fixed amount on a schedule and earn yield automatically — no bank, no middleman.\n\nDo you have a Solana wallet you'd like to use, or should I create one for you?",
+    "👋 Welcome to autoHODL!\n\nSave a little automatically and earn yield passively. \n\nDo you have a Solana wallet you'd like to use, or should I create one for you?",
     {
       reply_markup: new InlineKeyboard()
-        .text("🔑 Create a wallet for me", "wallet:create")
-        .text("💼 I have my own wallet", "wallet:own"),
+        .text("🔑 Create a wallet", "wallet:create")
+        .text("💼 I have a wallet", "wallet:own"),
     },
   );
 });
@@ -218,7 +218,7 @@ bot.callbackQuery(/^freq:(daily|weekly|monthly)$/, async (ctx) => {
 
 // ── Amount selected ─────────────────────────────────────────────────────────────
 
-bot.callbackQuery(/^amount:(daily|weekly|monthly):(\d+)$/, async (ctx) => {
+bot.callbackQuery(/^amount:(daily|weekly|monthly):(\d+(?:\.\d+)?)$/, async (ctx) => {
   const freq = ctx.match[1] as string;
   const amount = Number(ctx.match[2]);
   const telegramId = String(ctx.from?.id);
@@ -425,7 +425,8 @@ function buildConfirmMessage(freq: string, amount: number): string {
     `✏️ Funding schedule: $${amount} / ${p}`,
     "❌ Automatic funding via MoonPay",
     "",
-    "Authorize autoHODL, then connect MoonPay to activate funding.",
+    "A savings vault has been created for you.",
+    "Authorize autoHODL to securely automate your savings.",
   ].join("\n");
 }
 

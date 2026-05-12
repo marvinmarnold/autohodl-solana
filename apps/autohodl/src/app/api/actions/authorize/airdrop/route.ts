@@ -18,7 +18,7 @@ import { assertFunderSolvent, getUsdcMint } from "@/lib/solana";
 import { type SessionData, sessionOptions } from "@/lib/session";
 import { getSquadsVaultAddress } from "@/lib/squads";
 
-const AIRDROP_AMOUNT = BigInt(10_000); // 0.01 USDC (6 decimals)
+const airdropAmount_FALLBACK = BigInt(10_000); // 0.01 USDC (6 decimals)
 
 export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
@@ -29,6 +29,11 @@ export async function POST(req: NextRequest) {
   // Check MoonPay state — confirmed settings exist iff MoonPay has been set up before.
   const confirmedSettings = await getUserSettings(session.telegramId);
   const moonpayConfigured = confirmedSettings !== null;
+
+  // Use the user's savings amount so the faucet covers exactly one savings period.
+  const airdropAmount = confirmedSettings?.savingsAmountUsd
+    ? BigInt(Math.round(confirmedSettings.savingsAmountUsd * 1_000_000))
+    : airdropAmount_FALLBACK;
 
   // Send the demo USDC once per user — deduped by telegramId.
   const airdropKey = `airdrop_sent:telegram:${session.telegramId}`;
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest) {
       console.log("Airdrop: mint =", usdcMint.toBase58(), "network =", env.SOLANA_NETWORK, "rpc =", rpcHost, "vault =", vaultAddress, "owner =", session.walletAddress);
 
       // Pre-flight: fail fast with a clear message if funder is low on SOL or USDC.
-      await assertFunderSolvent(connection, funder, AIRDROP_AMOUNT);
+      await assertFunderSolvent(connection, funder, airdropAmount);
 
       // Resolve funder's USDC token account for the transfer call below.
       const funderAccounts = await connection.getParsedTokenAccountsByOwner(
@@ -103,12 +108,12 @@ export async function POST(req: NextRequest) {
       transferTx.feePayer = funder.publicKey;
       transferTx.add(
         priorityFee,
-        createTransferInstruction(funderAccountPubkey, recipientAtaAddress, funder.publicKey, AIRDROP_AMOUNT),
+        createTransferInstruction(funderAccountPubkey, recipientAtaAddress, funder.publicKey, airdropAmount),
       );
       await sendAndConfirmTransaction(connection, transferTx, [funder], { commitment: "confirmed" });
       await redis.set(airdropKey, "1");
       airdropStatus = "sent";
-      console.log("Airdrop: sent", AIRDROP_AMOUNT.toString(), "to vault", vaultAddress);
+      console.log("Airdrop: sent", airdropAmount.toString(), "to vault", vaultAddress);
     } catch (err) {
       airdropStatus = "failed";
       const msg = err instanceof Error ? err.message : String(err);

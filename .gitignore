@@ -8,3 +8,4 @@ build
 .turbo
 .DS_Store
 *.log
+docs/colosseum-application.md
