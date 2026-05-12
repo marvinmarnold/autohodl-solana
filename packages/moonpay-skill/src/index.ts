@@ -25,7 +25,7 @@ import {
   confirmActionTool,
 } from "./tools.js";
 
-const AUTOHODL_API_URL = process.env["AUTOHODL_API_URL"] ?? "https://autohodl.vercel.app";
+const AUTOHODL_API_URL = process.env["AUTOHODL_API_URL"] ?? "https://autohodl-solana-autohodl-bzflgqp54-locker-money.vercel.app";
 
 const server = new Server(
   { name: "autohodl-skill", version: "0.1.0" },
@@ -37,7 +37,7 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
     {
       name: "autohodl_lookup",
       description:
-        "Check if a Solana wallet address has autoHODL savings configured. Returns current settings and USDC balance, or null if not registered. If null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
+        "Check if a Solana wallet address has autoHODL savings configured. Returns { walletAddress, vaultAddress, walletUsdcBalance, vaultUsdcBalance, settings } or null if not registered. The vaultAddress is the Squads v4 PDA where production funds live; the wallet signs as Squads authority. If null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
       inputSchema: {
         type: "object",
         properties: {
@@ -53,7 +53,7 @@ server.setRequestHandler(ListToolsRequestSchema, () => ({
     {
       name: "autohodl_status",
       description:
-        "Get current autoHODL savings status for a wallet — savings schedule, USDC balance, and funding config. Returns null if the wallet is not registered; if null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
+        "Get current autoHODL savings status for a wallet — savings schedule, vault address, wallet USDC balance, and vault USDC balance. Returns null if the wallet is not registered; if null, tell the user to send `/start <walletAddress>` to the @autohodl_bot on Telegram.",
       inputSchema: {
         type: "object",
         properties: {

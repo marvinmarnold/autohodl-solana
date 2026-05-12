@@ -3,12 +3,16 @@ import { prepareAction, confirmAction } from "@autohodl/solana-action-client";
 type LookupResult = {
   telegramId: string;
   walletAddress: string;
+  vaultAddress: string;
   settings: {
     savingsFrequency: string;
     savingsAmountUsd: number;
     fundingFrequency?: string;
     fundingAmountUsd?: number;
   } | null;
+  walletUsdcBalance: number | null;
+  vaultUsdcBalance: number | null;
+  /** @deprecated alias of vaultUsdcBalance — funds in production live in the vault. */
   usdcBalance: number | null;
 } | null;
 
