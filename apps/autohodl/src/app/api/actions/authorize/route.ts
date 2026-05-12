@@ -6,6 +6,7 @@ import type { ActionGetResponse } from "@solana/actions";
 import { env } from "@/lib/env";
 import { signAndSendSolanaTransaction } from "@/lib/privy";
 import { buildTokenApproveTransaction } from "@/lib/solana";
+import { buildSquadsAuthorizeTransaction } from "@/lib/squads";
 import { persistSettings } from "@/lib/settings";
 import { type SessionData, sessionOptions } from "@/lib/session";
 import { getTelegramIdByWalletAddress } from "@/lib/kv";
@@ -101,9 +102,16 @@ export async function POST(req: NextRequest) {
 
   let txBase64: string;
   try {
-    txBase64 = await buildTokenApproveTransaction(walletAddress, env.AUTOHODL_DELEGATE_PUBKEY, connection);
+    if (isSessionAuth) {
+      // Privy/WebView flow — wallet's own USDC ATA delegation, signed server-side by Privy.
+      txBase64 = await buildTokenApproveTransaction(walletAddress, env.AUTOHODL_DELEGATE_PUBKEY, connection);
+    } else {
+      // Agent/external-wallet flow — Squads multisig init + spending-limit delegation,
+      // signed locally by the caller (e.g. MoonPay CLI). Funds live in the vault.
+      txBase64 = await buildSquadsAuthorizeTransaction(walletAddress, amt, freq, connection);
+    }
   } catch (err) {
-    console.error("Failed to build approve tx:", err);
+    console.error("Failed to build authorize tx:", err);
     return corsJson({ error: "tx_build_failed" }, 500);
   }
 
