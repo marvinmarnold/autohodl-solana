@@ -137,7 +137,7 @@ export default function SuccessPage() {
             <code style={walletCodeStyle}>{walletAddress}</code>
           </div>
         )}
-        <Row label="Yield via"   value="Reflect" valueColor="#34C759" />
+        <Row label="Yield via"   value="Reflect & Jupiter" valueColor="#34C759" />
         <Row label="Funding via" value="MoonPay" valueColor="#34C759" />
         <Row label="Wallet via"  value="Privy"   valueColor="#34C759" />
       </div>
